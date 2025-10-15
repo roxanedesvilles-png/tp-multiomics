@@ -22,11 +22,13 @@ knitr::opts_chunk$set(
 library(dplyr)
 library(tidyr)
 library(ggplot2)
+library(reshape2)
 library(tibble)
 library(purrr)
 library(tidyverse)
 library(org.Hs.eg.db)
 library(AnnotationDbi)
+library(mixOmics)
 ```
 
 # **1. Contexte et objectifs - Présentation du jeu de données**
@@ -40,7 +42,7 @@ Chaque bloc (RNA, protéome, cytokynes) contient un nombre distinct de features.
 Les échantillons sont partagés et décrits dans sample_info (avec la variable mode : IR vs IS).
 
 ```{r}
-data_t2d <- readRDS("/Users/roxanedesvilles/Documents/Pharmacie P5 DESCARTES/6A - M2 Bioinformatique biologique (UPc) 2025-2026/S1/UE Bioinformatique des omiques avancées/UE 8 - Production et gestion des big data en biologie/data_t2d.Rds")
+data_t2d <- readRDS("/Users/roxanedesvilles/Documents/Pharmacie P5 DESCARTES/6A - M2 Bioinformatique biologique (UPc) 2025-2026/S1/UE Bioinformatique des omiques avancées/UE 8 - Production et gestion des big data en biologie/tp-multiomics/data_t2d.Rds")
 
 # Vérifier les blocs
 lapply(data_t2d, dim)
@@ -53,6 +55,7 @@ n_samples; n_features
 # Classes disponibles
 table(data_t2d$sample_info$mode)
 ```
+
 **Commentaires :**
 
 Bloc RNA : 8933 features.
@@ -63,258 +66,431 @@ Bloc cytokyne : 66 features.
 
 Il y a 15 échantillons au total. 7 sont insulino-résistants (IR), et 8 sont insulino-sensibles (IS).
 
-
 # **3. Analyse préliminaire**
 
-## *a.Mise en forme et transformation des données*
-Les données du bloc RNA sont log transformées, mais pas normalisées.
-```{r}
-# RNA : z-score par gène (colonnes)
-RNA_scaled <- t(scale(t(data_t2d$RNA)))
-```
+## *a. Visualisation des données : par échantillon, par classe, par bloc omique*
 
-Les données du bloc protein sont déjà normalisées.
-```{r}
-# Protein : déjà normalisé, on laisse tel quel
-Protein_scaled <- data_t2d$protein
-```
-
-De même pout les données du bloc cytokyne, il faut les normaliser avant la visualisation graphique.
-```{r}
-# Cytokyne : z-score par feature
-Cyto_scaled <- t(scale(t(data_t2d$cytokyne)))
-```
-
-Ensuite on crée des matrices pivot, plus faciles à manipuler.
+**Commentaire :** Pour manipuler plus facilement les données, on transforme les blocs en matrices, puis on utilise tidyverse pour faire un pivot.
 
 ```{r}
-# tidy_block sur les matrices normalisées
-tidy_block <- function(mat, bloc_name) {
-  df <- as.data.frame(t(mat)) |> rownames_to_column(var = "Feature")
-  df_long <- df |>
-    pivot_longer(
-      cols = -Feature,
-      names_to = "sample",
-      values_to = "Value"
-    ) |>
-    mutate(Bloc = bloc_name)
-  return(df_long)
+# Extraction des matrices
+rna_mat <- as.matrix(data_t2d$RNA)
+prot_mat <- as.matrix(data_t2d$protein)
+cyto_mat <- as.matrix(data_t2d$cytokyne)
+
+# Récupération de l'info classe
+classes <- data_t2d$sample_info$mode
+samples <- rownames(data_t2d$sample_info)
+
+# Fonction pour convertir en tidy format
+tidy_block <- function(mat, block_name){
+  df <- as.data.frame(mat)
+  df$Sample <- rownames(df)
+  df$Class <- classes
+  df_melt <- melt(df, id.vars=c("Sample","Class"))
+  df_melt$Block <- block_name
+  return(df_melt)
 }
 
-rna_long  <- tidy_block(RNA_scaled, "RNA")
-prot_long <- tidy_block(Protein_scaled, "protein")
-cyto_long <- tidy_block(Cyto_scaled, "cytokyne")
+# Tidy pour chaque bloc
+df_rna <- tidy_block(rna_mat, "RNA")
+df_prot <- tidy_block(prot_mat, "Protein")
+df_cyto <- tidy_block(cyto_mat, "Cytokine")
 
-# Fusionner tous les blocs et ajouter infos échantillons
-omics_long <- bind_rows(rna_long, prot_long, cyto_long) |>
-  left_join(data_t2d$sample_info, by = "sample")
+# Combiner tous les blocs
+df_all <- bind_rows(df_rna, df_prot, df_cyto)
 ```
 
-## *b. Visualisation des distributions des features*
-On traite séparément les data de cytokyne par rapport à RNA et protein, car l'ordre de grandeur des datasets n'est pas le même (question de lisibilité des graphiques).
-
-```{r}
-omics_long_rna_prot <- omics_long %>% filter(Bloc %in% c("RNA", "protein"))
-omics_long_cyto     <- omics_long %>% filter(Bloc == "cytokyne")
-```
-
-### b.1. Par échantillon
-D'abord, on visualise RNA + protein ensemble. On génère un graphique sur un échantillon seulement, étant donné la taille du jeu de données.
+### a.1. Par échantillon
 
 ```{r, fig.width=14, fig.height=7}
-# Sous-échantillonnage pour lisibilité (RNA 9000 features)
-set.seed(123)
-omics_sub <- omics_long_rna_prot %>%
-  group_by(Bloc, sample) %>%
-  sample_n(500, replace = TRUE) %>%
-  ungroup()
-
-# Boxplot par échantillon
-ggplot(omics_sub, aes(x = sample, y = Value, fill = Bloc)) +
-  geom_boxplot(outlier.size = 0.3) +
-  facet_wrap(~Bloc, scales = "free_y") +
-  coord_cartesian(ylim = c(-5, 5)) +  # zoom sur valeurs principales
+ggplot(df_all, aes(x=Sample, y=value, fill=Block)) +
+  geom_boxplot() +
+  facet_wrap(~Block, scales="free") +
   theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Distribution des features par échantillon",
-       y = "Z-score")
+  theme(axis.text.x=element_text(angle=45, hjust=1)) +
+  labs(title="Distribution par échantillon", y="Expression")
 ```
-On regarde ensuite les cytokines. 
+
+### a.2. Par classe
+
 ```{r, fig.width=14, fig.height=7}
-ggplot(omics_long_cyto, aes(x = sample, y = Value, fill = sample)) +
-  geom_boxplot(outlier.size = 0.3) +
-  coord_cartesian(ylim = c(-0.3, 0.3)) +
+ggplot(df_all, aes(x=Class, y=value, fill=Block)) +
+  geom_boxplot() +
+  facet_wrap(~Block, scales="free") +
   theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Distribution des cytokines par échantillon", y = "Z-score")
+  labs(title="Distribution par classe", y="Expression")
 ```
 
+### a.3. Par bloc omique
 
-### b.2. Par classe
-De même on regarde d'abord RNA + protein. 
 ```{r, fig.width=14, fig.height=7}
-# RNA + Protein
-ggplot(omics_long_rna_prot, aes(x = mode, y = Value, fill = mode)) +
-  geom_boxplot(outlier.size = 0.3) +
-  facet_wrap(~Bloc, scales = "free_y") +
+ggplot(df_all, aes(x=Block, y=value, fill=Block)) +
+  geom_boxplot() +
   theme_bw() +
-  labs(title = "Distribution des features par classe (IS/IR)",
-       y = "Z-score")
+  labs(title="Distribution par bloc omique", y="Expression")
 ```
 
-Puis cytokyne.
-```{r, fig.width=14, fig.height=7}
-# Cytokines
-ggplot(omics_long_cyto, aes(x = mode, y = Value, fill = mode)) +
-  geom_boxplot(outlier.size = 0.3) +
-  coord_cartesian(ylim = c(-0.3, 0.3)) +
-  theme_bw() +
-  labs(title = "Distribution des cytokines par classe (IS/IR)",
-       y = "Z-score")
-```
+## *b. Mise en forme et transformation des données*
 
+**Commentaire :** Il faut d'abord vérifier si les données ont été log-transformées et/ou centrées-réduites.
 
-### b.3. Par bloc omique
-D'abord RNA + protein
-```{r, fig.width=14, fig.height=7}
-# RNA + Protein
-ggplot(omics_long_rna_prot, aes(x = Bloc, y = Value, fill = Bloc)) +
-  geom_boxplot(outlier.size = 0.3) +
-  theme_bw() +
-  labs(title = "Distribution des blocs RNA et Protein",
-       y = "Z-score")
-```
-Puis cytokyne.
-```{r, fig.width=14, fig.height=7}
-# Cytokines séparé
-ggplot(omics_long_cyto, aes(x = Bloc, y = Value, fill = Bloc)) +
-  geom_boxplot(outlier.size = 0.3) +
-  coord_cartesian(ylim = c(-0.3,0.3)) +  # zoom si nécessaire
-  theme_bw() +
-  labs(title = "Distribution du bloc Cytokines",
-       y = "Z-score")
-```
-
-### c. Selection des features
-
-D'abord on calcule le coefficient de variation (CV) pour chaque feature, afin de choisir le seuil de variance le plus pertinent.
+-   Pour le bloc RNA :
 
 ```{r, fig.width=14, fig.height=7}
-# Fonction pour calculer CV par feature
-cv <- function(x) {
-  sd(x) / mean(x)
-}
+# Calcul CV par gène
+cv_rna <- apply(rna_mat, 2, function(x) sd(x, na.rm = TRUE)/mean(x, na.rm = TRUE))
 
-# RNA
-cv_rna <- apply(data_t2d$RNA, 2, cv)
+# Résumé
 summary(cv_rna)
+
+# Histogramme
 hist(cv_rna, breaks=50, main="CV RNA", xlab="Coefficient de variation", col="green")
-abline(v=1.5, col="red", lwd=2)
+abline(v=0.4, col="red", lwd=2)
+```
 
-# Protein
-cv_prot <- apply(data_t2d$protein, 2, cv)
-summary(cv_prot)
-hist(cv_prot, breaks=50, main="CV Protein", xlab="Coefficient de variation", col="coral")
-abline(v=0, col="red", lwd=2)
+**Commentaire :** La médiane de la série est d'environ 0.61, avec des valeurs allant de 0.03 à 3.87. On choisit un seuil de 0.4 pour conserver la plupart des gènes.
 
-# Cytokines
-cv_cyto <- apply(data_t2d$cytokyne, 2, cv)
+```{r}
+# Filtrage
+rna_keep <- !is.na(cv_rna) & cv_rna >= 0.4
+rna_filt <- rna_mat[, rna_keep, drop = FALSE]
+
+# Scaling
+rna_scaled <- scale(rna_filt)
+```
+
+Les données RNA sont normalisées.
+
+-   Pour le bloc protein :
+
+```{r, fig.width=14, fig.height=7}
+# Écart-type par protéine (feature)
+sd_prot <- apply(prot_mat, 2, sd, na.rm = TRUE)
+summary(sd_prot)
+
+# Histogramme
+hist(sd_prot, breaks=50, main="SD Protein", xlab="Standard deviation", col="coral")
+abline(v=0.4, col="red", lwd=2)
+```
+
+**Commentaire :** Ici, on choisit de calculer le sd et non le CV. En effet, les données du bloc protein ont déjà été log-transformées (valeurs très négatives). Calculer le CV n'aurait pas de sens ici.
+
+La médiane étant de 0.58 environ (pour des valeurs allant de 0.096 à 3.29), on choisit un seuil de sd de 0.4, qui semble un bon compromis pour filtrer suffisamment de gènes peu variables, tout en restant permissif.
+
+```{r}
+# Filtrage
+prot_keep <- !is.na(sd_prot) & sd_prot >= 0.4
+prot_filt <- prot_mat[, prot_keep, drop = FALSE]
+
+# Scaling
+prot_scaled <- scale(prot_filt)
+```
+
+Les données protein sont normalisées.
+
+-   Pour le bloc cytokyne
+
+```{r, fig.width=14, fig.height=7}
+# Calcul CV par gène
+cv_cyto <- apply(cyto_mat, 2, function(x) sd(x, na.rm = TRUE)/mean(x, na.rm = TRUE))
 summary(cv_cyto)
-hist(cv_cyto, breaks=50, main="CV Cytokine", xlab="Coefficient de variation", col="cyan")
-abline(v=0.2, col="red", lwd=2)
+
+# Histogramme
+hist(cv_cyto, breaks=50, main="CV Cytokine", xlab="Coefficient de variation", col="#C8A2C8")
+abline(v=0.15, col="red", lwd=2)
 ```
 
-Pour RNA on choisit un seuil de 1.5.
-```{r}
-# Calcul CV sur RNA
-cv_rna <- apply(data_t2d$RNA, 2, function(x) sd(x)/mean(x))
-
-# Supprimer NA
-cv_rna_noNA <- cv_rna[!is.na(cv_rna)]
-
-# Filtrer les features CV > 1.5 en utilisant les noms
-rna_filtered <- data_t2d$RNA[, names(cv_rna_noNA)[cv_rna_noNA > 1.5]]
-
-# Recalculer CV sur features filtrées
-cv_rna_filtered <- apply(rna_filtered, 2, function(x) sd(x)/mean(x))
-
-# Top 10 features
-top10_rna <- sort(cv_rna_filtered, decreasing = TRUE)[1:10]
-top10_rna
-names(top10_rna)
-```
-Pour protein on choisit un seuil de 0. 
+**Commentaire :** Les valeurs de CV sont positives et petites (de 0.02 à 0.98). On choisit un seuil de 0.15, suffisamment permissif sachant la petite taille de ce bloc dans le dataset.
 
 ```{r}
-# CV initial pour Protein
-cv_prot <- apply(data_t2d$protein, 2, function(x) sd(x)/mean(x))
+# Filtrage
+cyto_keep <- !is.na(cv_cyto) & cv_cyto >= 0.15
+cyto_filt <- cyto_mat[, cyto_keep, drop = FALSE]
 
-# Supprimer NA et garder les noms
-cv_prot_noNA <- cv_prot[!is.na(cv_prot)]
-
-# Garder seulement les features CV > 2
-prot_filtered <- data_t2d$protein[, names(cv_prot_noNA)[cv_prot_noNA > 0]]
-
-# Recalculer CV sur les features filtrées
-cv_prot_filtered <- apply(prot_filtered, 2, function(x) sd(x)/mean(x))
-
-# Top 10 features les plus variables
-top10_prot <- sort(cv_prot_filtered, decreasing = TRUE)[1:10]
-top10_prot
-names(top10_prot)
+# Scaling
+cyto_scaled <- scale(cyto_filt)
 ```
 
-```{r}
-print(cv_prot_filtered)
+Les données cytokyne sont normalisées.
+
+Visualisation des données après preprocessing
+
+```{r, fig.width=14, fig.height=7}
+# Supposons que rna_scaled, prot_scaled, cyto_scaled existent après filtrage/scaling
+tidy_scaled <- function(mat, block_name){
+  df <- as.data.frame(mat)
+  df$Sample <- rownames(df)
+  df$Class <- classes
+  df_melt <- melt(df, id.vars=c("Sample","Class"))
+  df_melt$Block <- block_name
+  return(df_melt)
+}
+
+df_rna_scaled <- tidy_scaled(rna_scaled, "RNA")
+df_prot_scaled <- tidy_scaled(prot_scaled, "Protein")
+df_cyto_scaled <- tidy_scaled(cyto_scaled, "Cytokine")
+
+df_all_scaled <- bind_rows(df_rna_scaled, df_prot_scaled, df_cyto_scaled)
+
+# Boxplot par bloc après traitement
+ggplot(df_all_scaled, aes(x=Block, y=value, fill=Block)) +
+  geom_boxplot() +
+  theme_bw() +
+  labs(title="Distribution par bloc (après filtrage et scaling)", y="Expression (scaled)")
 ```
 
+## *c. Nombre de features après filtrage*
 
-Pour cytokyne on choisit un seuil de 0.2.
 ```{r}
-# Calcul CV sur Cytokines
-cv_cyto <- apply(data_t2d$cytokyne, 2, function(x) sd(x)/mean(x))
-
-# Supprimer NA
-cv_cyto_noNA <- cv_cyto[!is.na(cv_cyto)]
-
-# Filtrer features CV > 0.2
-cyto_filtered <- data_t2d$cytokyne[, names(cv_cyto_noNA)[cv_cyto_noNA > 0.2]]
-
-# Recalculer CV sur les features filtrées
-cv_cyto_filtered <- apply(cyto_filtered, 2, function(x) sd(x)/mean(x))
-
-# Top 10 features les plus variables
-top10_cyto <- sort(cv_cyto_filtered, decreasing = TRUE)[1:10]
-top10_cyto
-names(top10_cyto)
+# Nombre de features restantes
+sum(rna_keep)    # RNA
+sum(prot_keep)   # Protein
+sum(cyto_keep)   # Cytokine
 ```
 
 ```{r}
-print(cv_cyto_filtered)
+cat("RNA :", sum(rna_keep), "features\n")
+cat("Protein :", sum(prot_keep), "features\n")
+cat("Cytokine :", sum(cyto_keep), "features\n")
 ```
 
+**Commentaire :** Il reste 5844 features après filtrage du bloc RNA, 163 features après filtrage du bloc protein, et 28 features après filtrage du bloc cytokyne.
+
+## *d. Gènes et protéines les plus variables*
+
 ```{r}
-# Récupérer le symbole des gènes RNA
-res_symbol <- AnnotationDbi::select(
-  org.Hs.eg.db,
-  keys = names(cv_rna_filtered),   # noms des gènes RNA
-  keytype = "ENSEMBL",
-  columns = c("SYMBOL")
-)
+# Pour RNA
+top_rna <- sort(cv_rna[rna_keep], decreasing=TRUE)
+head(top_rna, 10)  # 10 gènes les plus variables
 
-res_symbol
+# Pour Protein
+top_prot <- sort(sd_prot[prot_keep], decreasing=TRUE)
+head(top_prot, 10)
 
-# Récupérer l'UNIPROT (protéine correspondante)
-res_uniprot <- AnnotationDbi::select(
+# Pour Cytokine
+top_cyto <- sort(cv_cyto[cyto_keep], decreasing=TRUE)
+head(top_cyto, 10)
+```
+
+## *e. Ces gènes sont-ils traduits ? Présents dans les données protéomiques ?*
+
+Pour évaluer si les gènes les plus variables au niveau transcriptomique sont traduits, les identifiants ENSEMBL des gènes sélectionnés ont été annotés à l’aide de la base org.Hs.eg.db. Les correspondances SYMBOL et UNIPROT ont été extraites via AnnotationDbi::select().
+
+```{r}
+cv_rna_filtered <- cv_rna[rna_keep]
+
+# 1. Annotation : SYMBOL + UNIPROT pour les gènes RNA
+res_annot <- AnnotationDbi::select(
   org.Hs.eg.db,
   keys = names(cv_rna_filtered),
   keytype = "ENSEMBL",
-  columns = c("UNIPROT")
+  columns = c("SYMBOL", "UNIPROT")
 )
-
-res_uniprot
 ```
+
 ```{r}
-res_uniprot$UNIPROT %in% colnames(data_t2d$protein)
+# 2. Identifier les gènes les plus variables
+top_rna_names <- names(sort(cv_rna_filtered, decreasing = TRUE))[1:10]
+top_rna_annot <- res_annot %>% filter(ENSEMBL %in% top_rna_names)
 ```
 
+```{r}
+# 3. Vérifier lesquels sont traduits (ont un UNIPROT)
+top_rna_annot$Traduit <- ifelse(is.na(top_rna_annot$UNIPROT), "Non", "Oui")
+```
+
+```{r}
+# 4. Petit résumé
+table(top_rna_annot$Traduit)
+```
+
+```{r}
+# 5. (Optionnel) – Exporter un tableau propre
+top_rna_annot <- top_rna_annot %>%
+  dplyr::arrange(desc(ENSEMBL)) %>%
+  dplyr::select(ENSEMBL, SYMBOL, UNIPROT, Traduit)
+
+top_rna_annot
+```
+
+```{r, fig.width=14, fig.height=7}
+traduit_df <- top_rna_annot %>%
+  count(Traduit)
+
+ggplot(traduit_df, aes(x = Traduit, y = n, fill = Traduit)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  geom_text(aes(label = n), vjust = -0.4, size = 5) +
+  scale_fill_manual(values = c("Oui" = "mediumorchid", "Non" = "grey70")) +
+  theme_bw() +
+  labs(
+    title = "Proportion de gènes RNA traduits (présents dans le protéome)",
+    x = "",
+    y = "Nombre de gènes"
+  ) +
+  theme(
+    plot.title = element_text(size = 13, face = "bold", hjust = 0.5),
+    legend.position = "none"
+  )
+```
+
+**Commentaires :** Après filtrage, tous les gènes RNA les plus variables ont une correspondance dans la base UniProt. ls sont donc potentiellement traduits et présents dans le bloc protéomique.
+
+Cela reflète une bonne cohérence entre les blocs RNA et protéomique, malgré les différences d’amplitude observées lors de la normalisation.
+
+# **4. Analyse en composantes principales : PCA et sPCA**
+
+## *a. PCA*
+
+### a.1. Par bloc
+
+**- PCA sur le bloc RNA**
+
+```{r, fig.width=14, fig.height=7}
+rna <- rna_scaled
+pca_rna <- pca(rna, ncomp = 5, center = TRUE, scale = TRUE)
+
+# Individus colorés par classe
+plotIndiv(pca_rna, group = data_t2d$sample_info$mode, legend = TRUE, title = "PCA - RNA")
+
+# Contribution de chaque PC
+plotVar(pca_rna, title = "Variables - RNA")
+
+# Évaluer le nombre de PC pertinentes
+pca_rna$prop_expl_var$X  # vecteur numérique de la variance expliquée par chaque PC
+
+round(pca_rna$prop_expl_var$X, 3)  # lisible
+cumsum(pca_rna$prop_expl_var$X)    # variance cumulée
+```
+
+PC1 et PC2 expliquent le mieux la variance des données (32,6% de variance cumulée expliquée).
+
+```{r, fig.width=14, fig.height=7}
+# Extraire la variance expliquée par chaque PC
+var_expl_rna <- pca_rna$prop_expl_var$X  # vecteur numérique
+
+# Elbow plot
+plot(var_expl_rna, type="b", pch=19, col="steelblue",
+     xlab="Composante principale", ylab="Variance expliquée",
+     main="Elbow plot PCA RNA")
+abline(h=0.09, col="red", lty=2)  # seuil optionnel pour voir les PCs importantes
+```
+
+```{r, fig.width=14, fig.height=7}
+# Récupérer les coordonnées PCA des échantillons
+pca_scores_rna <- as.data.frame(pca_rna$variates$X)
+pca_scores_rna$sample <- rownames(pca_scores_rna)
+pca_scores_rna$class <- data_t2d$sample_info$mode  # ta colonne de classes IS/IR
+
+# Plot PCA avec ellipse
+library(ggrepel)
+pca_scores_rna$outlier <- FALSE
+center_IR <- colMeans(pca_scores_rna[pca_scores_rna$class=="IR", c("PC1","PC2")])
+dist_IR <- sqrt((pca_scores_rna$PC1 - center_IR[1])^2 + (pca_scores_rna$PC2 - center_IR[2])^2)
+pca_scores_rna$outlier[which.max(dist_IR)] <- TRUE
+
+ggplot(pca_scores_rna, aes(x=PC1, y=PC2, color=class)) +
+  geom_point(size=3) +
+  geom_point(data=subset(pca_scores_rna, outlier==TRUE), 
+             color="red", size=4, shape=8) +  # point rouge étoilé
+  geom_text_repel(data=subset(pca_scores_rna, outlier==TRUE), 
+                  aes(label=sample), color="red") +
+  stat_ellipse(level=0.95) +
+  theme_minimal() +
+  labs(title="PCA RNA avec outlier", x="PC1", y="PC2")
+```
+
+**Commentaire de l'ellipse :**Les deux groupes IS et IR ont une variance similaire sur PC1 et 2. La dispersion des échantillons est comparable. Le groupe IS est plus homogène (l'ellipse de IS est incluse dans celle d'IR). Cette PCA montre que les principales sources de variations ne distinguent pas parfaitement les deux groupes. D'autres blocs pourraient mieux montrer cette séparation.
+
+L'outlier pourrait avoir un profil transcriptionnel un peu différent.
+
+**- PCA sur le bloc protein**
+
+```{r, fig.width=14, fig.height=7}
+prot <- prot_scaled
+pca_prot <- pca(prot, ncomp = 5, center = TRUE, scale = TRUE)
+
+# Individus colorés par classe
+plotIndiv(pca_prot, group = data_t2d$sample_info$mode, legend = TRUE, title = "PCA - RNA")
+
+# Contribution de chaque PC
+plotVar(pca_prot, title = "Variables - Protein")
+
+# Évaluer le nombre de PC pertinentes
+pca_prot$prop_expl_var$X  # vecteur numérique de la variance expliquée par chaque PC
+
+round(pca_prot$prop_expl_var$X, 3)  # lisible
+cumsum(pca_prot$prop_expl_var$X)    # variance cumulée
+```
+
+```{r, fig.width=14, fig.height=7}
+# Extraire la variance expliquée par chaque PC
+var_expl_prot <- pca_prot$prop_expl_var$X  # vecteur numérique
+
+# Elbow plot
+plot(var_expl_prot, type="b", pch=19, col="steelblue",
+     xlab="Composante principale", ylab="Variance expliquée",
+     main="Elbow plot PCA RNA")
+abline(h=0.155, col="red", lty=2)  # seuil optionnel pour voir les PCs importantes
+```
+
+```{r, fig.width=14, fig.height=7}
+# Récupérer les coordonnées PCA des échantillons
+pca_scores_prot <- as.data.frame(pca_prot$variates$X)
+pca_scores_prot$sample <- rownames(pca_scores_prot)
+pca_scores_prot$class <- data_t2d$sample_info$mode  # ta colonne de classes IS/IR
+
+# Plot PCA avec ellipse
+ggplot(pca_scores_prot, aes(x=PC1, y=PC2, color=class)) +
+  geom_point(size=3) +
+  stat_ellipse(level=0.95) +  # ellipse 95% pour chaque groupe
+  theme_minimal() +
+  labs(title="PCA Protein", x="PC1", y="PC2")
+```
+
+**Commentaire de l'ellipse :**Pour la PCA des protéines, les deux premières composantes principales expliquent une proportion plus élevée de variance que pour les données RNA, ce qui indique que la structure globale des protéines est mieux capturée par les deux premières PC. Les ellipses des groupes IS et IR sont horizontales, mais ont des tailles différentes : le groupe IR présente une dispersion plus large, alors que le groupe IS est plus concentré. Contrairement aux RNA, aucun point n’est un outlier et les chevauchements sont limités, ce qui traduit une séparation plus nette des groupes dans l’espace des deux premières composantes.
+
+*- Pour le bloc cytokyne*
+
+```{r, fig.width=14, fig.height=7}
+cyto <- cyto_scaled
+pca_cyto <- pca(cyto, ncomp = 5, center = TRUE, scale = TRUE)
+
+# Individus colorés par classe
+plotIndiv(pca_cyto, group = data_t2d$sample_info$mode, legend = TRUE, title = "PCA - RNA")
+
+# Contribution de chaque PC
+plotVar(pca_cyto, title = "Variables - Protein")
+
+# Évaluer le nombre de PC pertinentes
+pca_cyto$prop_expl_var$X  # vecteur numérique de la variance expliquée par chaque PC
+
+round(pca_cyto$prop_expl_var$X, 3)  # lisible
+cumsum(pca_cyto$prop_expl_var$X)    # variance cumulée
+```
+
+```{r, fig.width=14, fig.height=7}
+# Extraire la variance expliquée par chaque PC
+var_expl_cyto <- pca_cyto$prop_expl_var$X  # vecteur numérique
+
+# Elbow plot
+plot(var_expl_cyto, type="b", pch=19, col="steelblue",
+     xlab="Composante principale", ylab="Variance expliquée",
+     main="Elbow plot PCA RNA")
+```
+
+```{r, fig.width=14, fig.height=7}
+# Récupérer les coordonnées PCA des échantillons
+pca_scores_cyto <- as.data.frame(pca_cyto$variates$X)
+pca_scores_cyto$sample <- rownames(pca_scores_cyto)
+pca_scores_cyto$class <- data_t2d$sample_info$mode  # ta colonne de classes IS/IR
+
+# Plot PCA avec ellipse
+ggplot(pca_scores_cyto, aes(x=PC1, y=PC2, color=class)) +
+  geom_point(size=3) +
+  stat_ellipse(level=0.95) +  # ellipse 95% pour chaque groupe
+  theme_minimal() +
+  labs(title="PCA Cytokine", x="PC1", y="PC2")
+```
+
+**Commentaire :** Pour la PCA des cytokines, les deux premières composantes expliquent moins de variance que pour les protéines, mais restent informatives. Les ellipses des groupes IS et IR se croisent, indiquant un certain chevauchement entre les profils des deux groupes. Les différentes inclinaisons des ellipses IR et IS traduisentt des orientations différentes de la variation dans l’espace des deux premières PC. Aucun point n’apparaît comme outlier, suggérant que toutes les observations sont relativement cohérentes avec la structure globale des groupes.
