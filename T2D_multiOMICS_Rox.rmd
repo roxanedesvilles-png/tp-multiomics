@@ -342,9 +342,7 @@ Cela reflète une bonne cohérence entre les blocs RNA et protéomique, malgré 
 
 ## *a. PCA*
 
-### a.1. Par bloc
-
-**- PCA sur le bloc RNA**
+### a.1. PCA sur le bloc RNA
 
 ```{r, fig.width=14, fig.height=7}
 rna <- rna_scaled
@@ -404,7 +402,7 @@ ggplot(pca_scores_rna, aes(x=PC1, y=PC2, color=class)) +
 
 L'outlier pourrait avoir un profil transcriptionnel un peu différent.
 
-**- PCA sur le bloc protein**
+### a.2. PCA sur le bloc protein
 
 ```{r, fig.width=14, fig.height=7}
 prot <- prot_scaled
@@ -450,7 +448,7 @@ ggplot(pca_scores_prot, aes(x=PC1, y=PC2, color=class)) +
 
 **Commentaire de l'ellipse :**Pour la PCA des protéines, les deux premières composantes principales expliquent une proportion plus élevée de variance que pour les données RNA, ce qui indique que la structure globale des protéines est mieux capturée par les deux premières PC. Les ellipses des groupes IS et IR sont horizontales, mais ont des tailles différentes : le groupe IR présente une dispersion plus large, alors que le groupe IS est plus concentré. Contrairement aux RNA, aucun point n’est un outlier et les chevauchements sont limités, ce qui traduit une séparation plus nette des groupes dans l’espace des deux premières composantes.
 
-*- Pour le bloc cytokyne*
+### a.3. Pour le bloc cytokyne
 
 ```{r, fig.width=14, fig.height=7}
 cyto <- cyto_scaled
@@ -494,3 +492,49 @@ ggplot(pca_scores_cyto, aes(x=PC1, y=PC2, color=class)) +
 ```
 
 **Commentaire :** Pour la PCA des cytokines, les deux premières composantes expliquent moins de variance que pour les protéines, mais restent informatives. Les ellipses des groupes IS et IR se croisent, indiquant un certain chevauchement entre les profils des deux groupes. Les différentes inclinaisons des ellipses IR et IS traduisentt des orientations différentes de la variation dans l’espace des deux premières PC. Aucun point n’apparaît comme outlier, suggérant que toutes les observations sont relativement cohérentes avec la structure globale des groupes.
+
+## *b. sPCA*
+
+```{r, fig.width=14, fig.height=7}
+# Préparer les blocs
+
+# Y = classe IS / IR
+Y <- factor(data_t2d$sample_info$mode)
+
+# Les blocs
+blocks <- list(
+  RNA = rna_scaled,
+  Protein = prot_scaled,
+  Cytokine = cyto_scaled
+)
+
+# sPCA multi-blocs supervisée
+spca_res <- block.splsda(
+  X = blocks,
+  Y = Y,
+  ncomp = 2,   # on garde 2 composantes
+  keepX = list(
+    RNA = c(10, 5),       # 10 features sur comp1, 5 sur comp2
+    Protein = c(10, 5),
+    Cytokine = c(10, 5)
+  ),
+  scale = TRUE
+)
+
+# Visualiser les échantillons
+plotIndiv(spca_res, group = Y, legend = TRUE, ellipse = TRUE, title = "sPCA multi-blocs")
+
+# Extraire les variables retenues
+selected_vars <- lapply(names(blocks), function(bloc) {
+  lapply(1:2, function(comp) {
+    sv <- selectVar(spca_res, block = bloc, comp = comp)
+    sv[[bloc]]$name   # $name pour chaque bloc
+  })
+})
+names(selected_vars) <- names(blocks)
+
+# Affichage
+selected_vars
+```
+
+
