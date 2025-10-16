@@ -565,11 +565,10 @@ cor(spca_res$variates$Protein[,1], spca_res$variates$Cytokine[,1])
 
 plotArrow(spca_res, title = "Contribution des blocs")
 ```
+
 ```{r, fig.width=14, fig.height=7}
 circosPlot(spca_res, comp = 1, cutoff = 0.5, line = TRUE)
 ```
-
-
 
 Les valeurs ci-dessus correspondent aux corrélations entre chaque bloc et la variable Y (les classes IS et IR), sur chaque composante. Le bloc cytokyne est le plus informatif des 3 blocs (0.098/0.064).
 
@@ -647,7 +646,6 @@ plotVar(plsda_res, block = "RNA - protein - cytokyne", comp = 1:2, var.names = T
 Le graphique des échantillons montre deux ellipses bien séparées correspondant aux classes IS et IR, sans chevauchement notable. La dispersion intra-groupe est faible, ce qui indique une homogénéité des échantillons au sein de chaque classe. La cross-validation confirme cette observation, avec un taux d’erreur global très faible, indiquant une excellente performance de classification.
 
 Ces résultats suggèrent que la combinaison multi-blocs, en particulier avec les features sélectionnées par la sPCA, capture efficacement la variabilité pertinente entre les groupes et permet de distinguer clairement IS et IR. Cette approche multi-omique est donc plus discriminante que la PCA réalisée bloc par bloc, où certaines ellipses étaient plus étalées ou se chevauchaient.
-
 
 # **6. Analyse d'intégration**
 
@@ -839,6 +837,7 @@ ggplot(df_var, aes(x = Composante, y = Variance, color = Bloc)) +
   ) +
   scale_color_manual(values = c("steelblue", "darkgreen"))
 ```
+
 ```{r, fig.width=40, fig.height=20}
 # Graphique des individus (scores)
 plotIndiv(
@@ -903,18 +902,13 @@ cor_comp1
 cor_comp2
 ```
 
-**Commentaire :** 
+**Commentaire :**
 
-*- Composante 1* (cor = 0.88) : forte corrélation entre la première composante RNA et Protein.
-Cela signifie que les variations transcriptomiques capturent bien la variation protéique.
-Les gènes les plus contributifs de cette composante sont donc de bons candidats pour expliquer la variation des protéines.
+*- Composante 1* (cor = 0.88) : forte corrélation entre la première composante RNA et Protein. Cela signifie que les variations transcriptomiques capturent bien la variation protéique. Les gènes les plus contributifs de cette composante sont donc de bons candidats pour expliquer la variation des protéines.
 
-*- Composante 2* (cor = 0.96) : corrélation encore plus forte.
-Même les signaux secondaires sont très concordants entre RNA et Protein.
-Cela montre que les deux blocs sont très alignés, et que la structure globale du transcriptome se reflète dans le protéome.
+*- Composante 2* (cor = 0.96) : corrélation encore plus forte. Même les signaux secondaires sont très concordants entre RNA et Protein. Cela montre que les deux blocs sont très alignés, et que la structure globale du transcriptome se reflète dans le protéome.
 
 La PLS révèle une forte cohérence entre les profils RNA et protéine dans ce jeu de données. Les gènes et protéines les plus contributifs des composantes 1 et 2 sont des biomarqueurs potentiels pour différencier les groupes IR vs IS.
-
 
 ## *b. sPLS*
 
@@ -1041,18 +1035,17 @@ ggplot(top_vars_df, aes(x = reorder(Nom, Loading), y = Loading, fill = Bloc)) +
 
 ```
 
-**Commentaire :** 
+**Commentaire :**
 
-- Concernant le bloc RNA, PC1 regroupe les gènes qui traduisent la variation principale du transcriptome, et qui se reflète dans le protéome et la cytokine : prolifération, apoptose, modifications post-transcriptionnelles. Ce sont donc des candidats clés pour expliquer la différence IR vs IS.
+-   Concernant le bloc RNA, PC1 regroupe les gènes qui traduisent la variation principale du transcriptome, et qui se reflète dans le protéome et la cytokine : prolifération, apoptose, modifications post-transcriptionnelles. Ce sont donc des candidats clés pour expliquer la différence IR vs IS.
 
 PC2 capture un signal secondaire, moins dominant que PC1 mais toujours cohérent avec la régulation post-transcriptionnelle et le trafficking des protéines.
 
-
-- Concernant le bloc protein, PC1 regroupe des protéines impliquées dans l’inflammation, la coagulation et l’activation du complément. Ces variations reflètent probablement la différence entre les profils circulants IS et IR, avec un accent sur les réponses immunitaires et inflammatoires.
+-   Concernant le bloc protein, PC1 regroupe des protéines impliquées dans l’inflammation, la coagulation et l’activation du complément. Ces variations reflètent probablement la différence entre les profils circulants IS et IR, avec un accent sur les réponses immunitaires et inflammatoires.
 
 PC2 semble capter un axe plus métabolique et hormonal, moins directement inflammatoire. On retrouve des protéines qui peuvent être impliquées dans le transport de facteurs circulants, le métabolisme lipidique ou la régulation hormonale. Cela complète l’information de PC1 en distinguant les groupes selon des variations métaboliques et physiologiques moins liées à l’inflammation.
 
-- Concernant le bloc cytokyne, PC1 met en évidence un axe fortement inflammatoire et angiogénique. Les cytokines les plus contributives incluent EOTAXIN et MCP1, qui sont impliquées dans le recrutement des éosinophiles et des monocytes/macrophages, respectivement, suggérant une activation marquée des réponses immunitaires innées. Les facteurs de croissance et d’angiogenèse tels que VEGFD, EGF et PDGFBB apparaissent également parmi les features les plus discriminantes, indiquant que cette composante reflète non seulement la variabilité des réponses inflammatoires mais aussi l’état du remodelage vasculaire et de la régénération tissulaire. En résumé, PC1 semble représenter un profil global combinant inflammation, recrutement cellulaire et potentiel angiogénique, qui distingue clairement les individus IR des individus IS.
+-   Concernant le bloc cytokyne, PC1 met en évidence un axe fortement inflammatoire et angiogénique. Les cytokines les plus contributives incluent EOTAXIN et MCP1, qui sont impliquées dans le recrutement des éosinophiles et des monocytes/macrophages, respectivement, suggérant une activation marquée des réponses immunitaires innées. Les facteurs de croissance et d’angiogenèse tels que VEGFD, EGF et PDGFBB apparaissent également parmi les features les plus discriminantes, indiquant que cette composante reflète non seulement la variabilité des réponses inflammatoires mais aussi l’état du remodelage vasculaire et de la régénération tissulaire. En résumé, PC1 semble représenter un profil global combinant inflammation, recrutement cellulaire et potentiel angiogénique, qui distingue clairement les individus IR des individus IS.
 
 PC2 capture des variations plus subtiles mais biologiquement significatives, orientées vers la régulation immunitaire adaptative et l’interaction métabolisme‑immunité. On y retrouve IL4, cytokine clé de la polarisation Th2 et de la réponse humorale, et IL17A, impliquée dans l’inflammation et l’activation des leucocytes. GM-CSF est également contributive, reflétant l’activation et la prolifération des cellules myéloïdes, tandis que LEPTIN introduit une dimension métabolique, liant l’état énergétique à la modulation immunitaire. Enfin, ENA78 souligne la composante inflammatoire liée au recrutement des neutrophiles. Cette composante semble donc représenter un axe de coordination entre l’immunité adaptative, l’activation cellulaire et la régulation métabolique, complétant l’information fournie par PC1 sur les différences IR vs IS.
 
@@ -1133,12 +1126,110 @@ if(length(top_genes_symbol) > 0){
 }
 ```
 
-**Commentaire :** L’analyse d’enrichissement GO/Reactome des gènes et protéines les plus discriminants (issus de la PLS RNA→Protein) met en évidence une surreprésentation de processus liés à la réponse inflammatoire, au métabolisme lipidique et au transport du fer, ainsi qu’à des voies de signalisation hormonale et de stress oxydatif.
-Ces voies sont cohérentes avec les différences physiopathologiques attendues entre les sujets IR et IS, notamment l’activation de la réponse immune innée et les perturbations du métabolisme énergétique.
+**Commentaire :** L’analyse d’enrichissement GO/Reactome des gènes et protéines les plus discriminants (issus de la PLS RNA→Protein) met en évidence une surreprésentation de processus liés à la réponse inflammatoire, au métabolisme lipidique et au transport du fer, ainsi qu’à des voies de signalisation hormonale et de stress oxydatif. Ces voies sont cohérentes avec les différences physiopathologiques attendues entre les sujets IR et IS, notamment l’activation de la réponse immune innée et les perturbations du métabolisme énergétique.
 
 Ces résultats sont cohérents avec ceux obtenus lors des analyses précédentes.
 
-```{r}
+## *d. DIABLO*
 
+```{r}
+Y <- factor(data_t2d$sample_info$mode)
+X <- list(
+  RNA = rna_scaled,
+  Protein = prot_scaled,
+  Cytokine = cyto_scaled
+)
+
+# aligner les lignes sur les échantillons
+for (b in names(X)) rownames(X[[b]]) <- rownames(data_t2d$sample_info)
+
+lapply(X, dim)
+```
+
+```{r}
+design = matrix(0.1, ncol = length(X), nrow = length(X), 
+                dimnames = list(names(X), names(X)))
+diag(design) = 0 # set diagonal to 0s
+
+design
+```
+
+```{r, fig.width=14, fig.height=7}
+
+set.seed(1234)
+basic.diablo.model <- block.splsda(
+  X = X, Y = Y,
+  ncomp = 5,
+  design = design,
+  near.zero.var = TRUE
+)
+
+set.seed(1234)
+perf.diablo = perf(basic.diablo.model, validation = 'Mfold', 
+                   folds = 3, nrepeat = 10, progressBar = TRUE) 
+
+plot(perf.diablo) # plot output of tuning
+```
+
+```{r}
+ncomp = perf.diablo$choice.ncomp$WeightedVote["Overall.BER", "centroids.dist"] 
+perf.diablo$choice.ncomp$WeightedVote 
+```
+
+```{r}
+test.keepX <- list(
+  RNA = c(50, 100, 200, 500, 800),
+  Protein = c(5, 10, 20, 30, 50),
+  Cytokine = c(3, 5, 10, 15, 20)
+)
+
+set.seed(1234)
+tune.TCGA = tune.block.splsda(X = X, Y = Y, ncomp = ncomp, 
+                              test.keepX = test.keepX, design = design,
+                              validation = 'Mfold', folds = 3, nrepeat = 5,
+                              dist = "centroids.dist", progressBar = TRUE)
+```
+
+```{r}
+list.keepX = tune.TCGA$choice.keepX
+list.keepX
+```
+
+```{r}
+# set the optimised DIABLO model
+final.diablo.model = block.splsda(X = X, Y = Y, ncomp = ncomp, 
+                          keepX = list.keepX, design = design)
+```
+
+```{r, fig.width=14, fig.height=7}
+plotDiablo(final.diablo.model, ncomp = 1)
+plotDiablo(final.diablo.model, ncomp = 2)
+plotDiablo(final.diablo.model, ncomp = 3)
+```
+
+
+```{r, fig.width=14, fig.height=7}
+plotIndiv(final.diablo.model, ind.names = FALSE, legend = TRUE, 
+          title = 'DIABLO Sample Plots')
+plotArrow(final.diablo.model, ind.names = FALSE, legend = TRUE, 
+          title = 'DIABLO')
+```
+
+```{r fig.width=14, fig.height=7}
+plotVar(final.diablo.model, var.names = FALSE, 
+        style = 'graphics', legend = TRUE,
+        pch = c(16, 17, 15), cex = c(2,2,2), 
+        col = c('darkorchid', 'brown1', 'lightgreen'))
+```
+
+```{r fig.width=14, fig.height=7}
+circosPlot(final.diablo.model, cutoff = 0.7, line = TRUE,
+           color.blocks= c('darkorchid', 'brown1', 'lightgreen'),
+           color.cor = c("chocolate3","grey20"), size.labels = 1.5)
+```
+
+```{r fig.width=14, fig.height=7}
+network(final.diablo.model, blocks = c(1,2,3),
+        color.node = c('darkorchid', 'brown1', 'lightgreen'), cutoff = 0.8)
 ```
 
