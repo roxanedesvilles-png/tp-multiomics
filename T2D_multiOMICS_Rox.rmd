@@ -1225,7 +1225,7 @@ plotVar(final.diablo.model, var.names = FALSE,
         col = c('darkorchid', 'brown1', 'lightgreen'))
 ```
 
-```{r, fig.width=14, fig.height=17}
+```{r, fig.width=14, fig.height=7}
 circosPlot(final.diablo.model, cutoff = 0.7, line = TRUE,
            color.blocks= c('darkorchid', 'brown1', 'lightgreen'),
            color.cor = c("chocolate3","grey20"), size.labels = 1.5)
@@ -1233,54 +1233,61 @@ circosPlot(final.diablo.model, cutoff = 0.7, line = TRUE,
 
 ```{r fig.width=14, fig.height=7}
 network(final.diablo.model, blocks = c(1,2,3),
-        color.node = c('darkorchid', 'brown1', 'lightgreen'), cutoff = 0.85)
+        color.node = c('darkorchid', 'brown1', 'lightgreen'), cutoff = 0.78)
 ```
 
 
 # **7. Analyse en réseau**
 
+## *a. Réseau de régulation génique (GRN)*
+
 ```{r}
-set.seed(1234)
-# Filtrage
-rna_keep_bis <- !is.na(cv_rna) & cv_rna >= 1.5
-rna_filt_bis <- rna_mat[, rna_keep, drop = FALSE]
+library(minet)       # pour build.mim et clr
+library(igraph)      # pour graph_from_adjacency_matrix
 
-# Scaling
-rna_scaled_bis <- scale(rna_filt)
-dim(rna_scaled_bis)
+# 1. Filtrer et scaler RNA (adapte le seuil CV si besoin)
+rna_keep <- !is.na(cv_rna) & cv_rna >= 1.5
+rna_filt <- rna_mat[, rna_keep, drop = FALSE]
+rna_scaled <- scale(rna_filt)
 
-mi  <- build.mim(rna_scaled_bis, estimator = "spearman")
+# 2. Construire la matrice d'information mutuelle et CLR
+mi <- build.mim(rna_scaled, estimator = "spearman")
 clr_mat <- clr(mi)
 
+# 3. Seuil pour garder les liens les plus forts
 thr <- quantile(clr_mat[clr_mat > 0], 0.95)
 clr_mat[clr_mat < thr] <- 0
 diag(clr_mat) <- 0
 
-gene_names <- colnames(rna_scaled_bis)
-
-isolated_genes <- gene_names[rowSums(clr_mat) == 0]
-
+# 4. Créer le GRN comme objet igraph
 g_grn <- graph_from_adjacency_matrix(clr_mat, mode = "undirected", weighted = TRUE, diag = FALSE)
 
+# 5. Statistiques
+nb_noeuds <- vcount(g_grn)
+nb_aretes <- ecount(g_grn)
+degre <- degree(g_grn)
+isoles_idx <- which(degre == 0)
+hub_gene <- names(which.max(degre))
+hub_deg <- max(degre)
 
-nb_noeuds   <- vcount(g_grn)
-nb_aretes   <- ecount(g_grn)
-degre       <- degree(g_grn)
-isoles_idx  <- which(degre == 0)
-hub_gene    <- names(which.max(degre))
-hub_deg     <- max(degre)
+cat("Nombre de nœuds :", nb_noeuds, "\n")
+cat("Nombre d'arêtes :", nb_aretes, "\n")
+cat("Nombre de nœuds isolés :", length(isoles_idx), "\n")
+cat("Gène le plus connecté :", hub_gene, "avec", hub_deg, "connexions\n")
 
-list(
-  noeuds = nb_noeuds,
-  aretes = nb_aretes,
-  nb_isoles = length(isoles_idx),
-  hub_gene = hub_gene,
-  connexions_hub = hub_deg
-)
+# 6. Histogramme des degrés
+hist(degre, breaks = 50, main = "Distribution des degrés", xlab = "Degré", ylab = "Fréquence")
+```
 
-hist(degree(g_grn), breaks = 50, main = "Distribution des degrés", xlab = "Degré", ylab = "Fréquence")
+**Commentaire :**
 
-BioGRID <- readRDS("human_ppi.Rds")
+On trouve pour ce réseau : 859 noeuds (gènes présents dans le sous-réseau), 6603 arètes (119 interactions entre elles), aucun noeud isolé (gène n'ayant aucune interaction dans le réseau).
+Le gène le plus connecté est ENSG00000044459 (correpond au gène *CNTLN* codant pour une protéine impliquée dans l’organisation du centrosome et du cytosquelette), qui est connectée à 30 autres gènes.
+
+# *b. Réseau d’interactions protéiques (PPI)*
+
+```{r}
+BioGRID <- readRDS("/Users/roxanedesvilles/Documents/Pharmacie P5 DESCARTES/6A - M2 Bioinformatique biologique (UPc) 2025-2026/S1/UE Bioinformatique des omiques avancées/UE 8 - Production et gestion des big data en biologie/tp-multiomics/human_ppi.Rds")
 str(BioGRID)
 prot_ids <- colnames(prot_scaled)
 ppi_edges <- subset(BioGRID, A %in% prot_ids & B %in% prot_ids)
@@ -1304,3 +1311,73 @@ list(
 
 hist(degre, breaks = 50, main = "Distribution des degrés (PPI)", xlab = "Degré", ylab = "Fréquence")
 ```
+
+**Commentaire :**
+
+On trouve pour ce réseau : 163 noeuds (protéines présentes dans le sous-réseau), 119 arètes (119 interactions entre elles), 88 noeuds isolés (protéines n'ayant aucune interaction dans le réseau).
+La protéine la plus connectée est P02647 (correspond à l'Apolipoprotéine A1 humaine), qui est connectée à 19 autres protéines.
+
+
+```{r}
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+
+genes <- colnames(rna_scaled_bis)
+prots <- colnames(prot_scaled)
+
+map <- AnnotationDbi::select(org.Hs.eg.db, keys = genes,
+                             keytype = "ENSEMBL", columns = c("SYMBOL","UNIPROT"))
+map <- na.omit(unique(map[c("ENSEMBL","UNIPROT")]))
+
+
+gp_edges <- subset(map, UNIPROT %in% prots)
+colnames(gp_edges) <- c("gene","protein")  # ENSEMBL, UNIPROT
+```
+
+
+
+```{r}
+tfdb <- readRDS("/Users/roxanedesvilles/Documents/Pharmacie P5 DESCARTES/6A - M2 Bioinformatique biologique (UPc) 2025-2026/S1/UE Bioinformatique des omiques avancées/UE 8 - Production et gestion des big data en biologie/tp-multiomics/human_TF_to_targeted_gene.Rds")
+
+tf_edges <- tfdb
+
+colnames(tf_edges) <- c("tf", "gene")
+
+genes <- colnames(rna_scaled_bis)
+tf_edges <- subset(tf_edges, gene %in% genes)
+
+
+prots <- colnames(prot_scaled)
+tf_edges <- subset(tf_edges, tf %in% prots | !(tf %in% prots))
+
+head(tf_edges)
+dim(tf_edges)
+```
+
+
+
+```{r}
+tf_df <- data.frame(from = tf_edges$tf, to = tf_edges$gene, type = "TF", directed = TRUE)
+g_tf <- graph_from_data_frame(tf_df, directed = TRUE)
+
+vcount(g_tf)   # nombre total de nœuds (TF + gènes)
+ecount(g_tf)   # nombre d'arêtes TF→gène
+
+```
+
+
+
+```{r}
+set.seed(1234)
+plot(
+  g_tf,
+  vertex.size = 3,
+  vertex.label = NA,
+  edge.arrow.size = 0.3,
+  main = "Réseau TF → gène"
+)
+```
+
+# *c. Connexion gène–protéine*
+
+
