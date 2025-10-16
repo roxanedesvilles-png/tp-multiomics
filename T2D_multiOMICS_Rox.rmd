@@ -30,6 +30,7 @@ library(org.Hs.eg.db)
 library(AnnotationDbi)
 library(mixOmics)
 library(gprofiler2)
+library(netOmics)
 ```
 
 # **1. Contexte et objectifs - Présentation du jeu de données**
@@ -1140,10 +1141,15 @@ X <- list(
   Cytokine = cyto_scaled
 )
 
+
+
 # aligner les lignes sur les échantillons
 for (b in names(X)) rownames(X[[b]]) <- rownames(data_t2d$sample_info)
 
+
+
 lapply(X, dim)
+
 ```
 
 ```{r}
@@ -1154,9 +1160,7 @@ diag(design) = 0 # set diagonal to 0s
 design
 ```
 
-```{r, fig.width=14, fig.height=7}
-
-set.seed(1234)
+```{r}
 basic.diablo.model <- block.splsda(
   X = X, Y = Y,
   ncomp = 5,
@@ -1164,7 +1168,6 @@ basic.diablo.model <- block.splsda(
   near.zero.var = TRUE
 )
 
-set.seed(1234)
 perf.diablo = perf(basic.diablo.model, validation = 'Mfold', 
                    folds = 3, nrepeat = 10, progressBar = TRUE) 
 
@@ -1183,7 +1186,7 @@ test.keepX <- list(
   Cytokine = c(3, 5, 10, 15, 20)
 )
 
-set.seed(1234)
+
 tune.TCGA = tune.block.splsda(X = X, Y = Y, ncomp = ncomp, 
                               test.keepX = test.keepX, design = design,
                               validation = 'Mfold', folds = 3, nrepeat = 5,
@@ -1201,28 +1204,35 @@ final.diablo.model = block.splsda(X = X, Y = Y, ncomp = ncomp,
                           keepX = list.keepX, design = design)
 ```
 
-```{r, fig.width=14, fig.height=7}
-plotDiablo(final.diablo.model, ncomp = 1)
-plotDiablo(final.diablo.model, ncomp = 2)
-plotDiablo(final.diablo.model, ncomp = 3)
-```
+```{r,  fig.width=14, fig.height=7}
+# Nombre de composantes par bloc
+ncomp_max <- min(sapply(final.diablo.model$variates, ncol))
 
+# Boucle pour plotDiablo sur toutes les composantes
+for (comp in 1:ncomp_max) {
+  plotDiablo(final.diablo.model, ncomp = comp, 
+             title = paste("DIABLO - Composante", comp))
+}
+```
 
 ```{r, fig.width=14, fig.height=7}
 plotIndiv(final.diablo.model, ind.names = FALSE, legend = TRUE, 
           title = 'DIABLO Sample Plots')
+```
+
+```{r, fig.width=14, fig.height=7}
 plotArrow(final.diablo.model, ind.names = FALSE, legend = TRUE, 
           title = 'DIABLO')
 ```
 
-```{r fig.width=14, fig.height=7}
+```{r, fig.width=14, fig.height=7}
 plotVar(final.diablo.model, var.names = FALSE, 
         style = 'graphics', legend = TRUE,
         pch = c(16, 17, 15), cex = c(2,2,2), 
         col = c('darkorchid', 'brown1', 'lightgreen'))
 ```
 
-```{r fig.width=14, fig.height=7}
+```{r, fig.width=14, fig.height=17}
 circosPlot(final.diablo.model, cutoff = 0.7, line = TRUE,
            color.blocks= c('darkorchid', 'brown1', 'lightgreen'),
            color.cor = c("chocolate3","grey20"), size.labels = 1.5)
@@ -1230,6 +1240,53 @@ circosPlot(final.diablo.model, cutoff = 0.7, line = TRUE,
 
 ```{r fig.width=14, fig.height=7}
 network(final.diablo.model, blocks = c(1,2,3),
-        color.node = c('darkorchid', 'brown1', 'lightgreen'), cutoff = 0.8)
+        color.node = c('darkorchid', 'brown1', 'lightgreen'), cutoff = 0.85)
 ```
 
+
+# **7. Analyse en réseau**
+
+```{r GRN-analysis, message=FALSE, warning=FALSE}
+library(netOmics)
+library(igraph)
+
+# 1. Extraire les gènes sélectionnés par DIABLO
+selected_genes <- selectVar(final.diablo.model, block = "RNA")$RNA$name
+
+# 2. Filtrer la matrice RNA pour ne garder que ces gènes
+rna_filtered <- rna_scaled[, selected_genes, drop = FALSE]
+
+# 3. Construire le GRN avec corrélation
+# cor.netOmics retourne une liste avec $adjacency
+grn_result <- cor.netOmics(rna_filtered)
+
+# 4. Convertir en objet igraph
+grn_igraph <- graph_from_adjacency_matrix(
+  grn_result$adjacency,
+  mode = "undirected",
+  weighted = TRUE,
+  diag = FALSE
+)
+
+# 5. Analyse du réseau
+cat("Nombre de nœuds :", gorder(grn_igraph), "\n")
+cat("Nombre d'arêtes :", gsize(grn_igraph), "\n")
+cat("Nombre de nœuds isolés :", sum(degree(grn_igraph) == 0), "\n")
+
+# Distribution des degrés
+degree_dist <- degree(grn_igraph)
+hist(degree_dist, main = "Distribution des degrés", xlab = "Degré")
+
+# Gène le plus connecté
+most_connected_gene <- names(which.max(degree_dist))
+cat("Gène le plus connecté :", most_connected_gene, "\n")
+
+# 6. Visualisation basique
+plot(
+  grn_igraph,
+  vertex.size = 5,
+  vertex.label = NA,
+  edge.width = E(grn_igraph)$weight * 2,
+  main = "GRN - gènes filtrés par DIABLO"
+)
+```
