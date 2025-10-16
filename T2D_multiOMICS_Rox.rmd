@@ -29,6 +29,7 @@ library(tidyverse)
 library(org.Hs.eg.db)
 library(AnnotationDbi)
 library(mixOmics)
+library(gprofiler2)
 ```
 
 # **1. Contexte et objectifs - Présentation du jeu de données**
@@ -555,7 +556,7 @@ L'analyse sPCA sur les trois blocs RNA, protein et cytokyne met en évidence les
 
 **Identifier le bloc le plus informatif :**
 
-```{r}
+```{r, fig.width=14, fig.height=7}
 lapply(spca_res$loadings, function(x) apply(abs(x), 2, mean))
 
 cor(spca_res$variates$RNA[,1], spca_res$variates$Protein[,1])
@@ -564,6 +565,11 @@ cor(spca_res$variates$Protein[,1], spca_res$variates$Cytokine[,1])
 
 plotArrow(spca_res, title = "Contribution des blocs")
 ```
+```{r, fig.width=14, fig.height=7}
+circosPlot(spca_res, comp = 1, cutoff = 0.5, line = TRUE)
+```
+
+
 
 Les valeurs ci-dessus correspondent aux corrélations entre chaque bloc et la variable Y (les classes IS et IR), sur chaque composante. Le bloc cytokyne est le plus informatif des 3 blocs (0.098/0.064).
 
@@ -641,3 +647,498 @@ plotVar(plsda_res, block = "RNA - protein - cytokyne", comp = 1:2, var.names = T
 Le graphique des échantillons montre deux ellipses bien séparées correspondant aux classes IS et IR, sans chevauchement notable. La dispersion intra-groupe est faible, ce qui indique une homogénéité des échantillons au sein de chaque classe. La cross-validation confirme cette observation, avec un taux d’erreur global très faible, indiquant une excellente performance de classification.
 
 Ces résultats suggèrent que la combinaison multi-blocs, en particulier avec les features sélectionnées par la sPCA, capture efficacement la variabilité pertinente entre les groupes et permet de distinguer clairement IS et IR. Cette approche multi-omique est donc plus discriminante que la PCA réalisée bloc par bloc, où certaines ellipses étaient plus étalées ou se chevauchaient.
+
+
+# **6. Analyse d'intégration**
+
+## *a. PLS*
+
+```{r, fig.width=40, fig.height=20}
+# -----------------------------
+# Blocs à inclure
+# -----------------------------
+X_block <- rna_scaled       # matrice RNA
+Y_block <- prot_scaled      # matrice Protein
+
+# PLS classique (X → Y)
+pls_res <- pls(X_block, Y_block, ncomp = 10, scale = TRUE)
+
+# Y = classe IS / IR
+Y <- factor(data_t2d$sample_info$mode)
+
+# -----------------------------
+# Visualisation des individus dans l'espace X (RNA)
+# -----------------------------
+plotIndiv(
+  pls_res,
+  comp = c(1,2),
+  group = Y,               # classe IR / IS pour colorer
+  legend = TRUE,
+  ellipse = TRUE,
+  title = "PLS RNA → Protein - individus"
+)
+
+# -----------------------------
+# Visualisation des variables (loadings) - Top 20 par composante
+# -----------------------------
+
+# Extraire les loadings X (RNA) et Y (Protein)
+loadings_X <- pls_res$loadings$X
+loadings_Y <- pls_res$loadings$Y
+
+# Fonction pour récupérer les top N variables par composante
+get_topN <- function(loadings, N = 20) {
+  df_list <- lapply(1:ncol(loadings), function(comp) {
+    df <- data.frame(
+      Nom = rownames(loadings),
+      Loading = loadings[, comp],
+      Composante = paste0("Comp", comp),
+      stringsAsFactors = FALSE
+    )
+    df %>% slice_max(order_by = abs(Loading), n = N)
+  })
+  bind_rows(df_list)
+}
+
+topX <- get_topN(loadings_X, N = 20)
+topY <- get_topN(loadings_Y, N = 20)
+
+# Ajouter une colonne Bloc pour couleur
+topX$Bloc <- "RNA"
+topY$Bloc <- "Protein"
+
+top_vars <- bind_rows(topX, topY)
+
+# Plot avec ggplot
+ggplot(top_vars, aes(x = reorder(Nom, Loading), y = Loading, fill = Bloc)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~Composante, scales = "free") +
+  coord_flip() +
+  theme_bw() +
+  labs(
+    title = "Top 20 variables contributives PLS RNA → Protein",
+    x = "",
+    y = "Loading"
+  ) +
+  scale_fill_manual(values = c("RNA" = "steelblue", "Protein" = "coral"))
+```
+
+```{r, fig.width=14, fig.height=7}
+# -----------------------------
+# Blocs à inclure
+# -----------------------------
+X_block <- rna_scaled       # matrice RNA
+Y_block <- prot_scaled      # matrice Protein
+Y <- factor(data_t2d$sample_info$mode)  # IS / IR
+
+# -----------------------------
+# PLS classique
+# -----------------------------
+pls_res <- pls(
+  X_block, Y_block,
+  ncomp = 10,   # deux composantes principales pour visualisation
+  scale = TRUE
+)
+
+# -----------------------------
+# Visualisation des individus (scores)
+# -----------------------------
+plotIndiv(
+  pls_res,
+  comp = c(1,2),
+  group = Y,
+  legend = TRUE,
+  ellipse = TRUE,
+  title = "PLS RNA → Protein - individus"
+)
+
+# -----------------------------
+# Top 20 variables contributives par composante
+# -----------------------------
+top_vars_list <- list()
+
+for (bloc in c("X", "Y")) {
+  ncomp_bloc <- if(bloc == "X") ncol(pls_res$loadings$X) else ncol(pls_res$loadings$Y)
+  
+  for (comp in 1:ncomp_bloc) {
+    sv <- if(bloc == "X") {
+      data.frame(
+        Nom = rownames(pls_res$loadings$X),
+        Loading = pls_res$loadings$X[, comp],
+        stringsAsFactors = FALSE
+      )
+    } else {
+      data.frame(
+        Nom = rownames(pls_res$loadings$Y),
+        Loading = pls_res$loadings$Y[, comp],
+        stringsAsFactors = FALSE
+      )
+    }
+    
+    df <- sv %>%
+      dplyr::mutate(
+        Bloc = ifelse(bloc == "X", "RNA", "Protein"),
+        Composante = paste0("Comp", comp)
+      ) %>%
+      dplyr::arrange(desc(abs(Loading))) %>%
+      dplyr::slice(1:20)  # top 20
+    top_vars_list[[paste0(bloc, "_Comp", comp)]] <- df
+  }
+}
+
+# Fusionner tous les blocs/composantes
+top_vars_pls_df <- bind_rows(top_vars_list)
+
+# Tableau des top 20 variables
+knitr::kable(top_vars_pls_df, digits = 3, caption = "Top 20 variables contributives PLS RNA → Protein")
+
+# -----------------------------
+# Détermination du nombre optimal de composantes via variance expliquée
+# -----------------------------
+# Variance expliquée pour X et Y
+var_expl_X <- pls_res$prop_expl_var$X
+var_expl_Y <- pls_res$prop_expl_var$Y
+
+# Graphique variance expliquée cumulée
+par(mfrow = c(1,2))
+plot(var_expl_X, type = "b", pch = 19, col = "steelblue",
+     xlab = "Composante", ylab = "Variance expliquée (%)",
+     main = "Variance expliquée - RNA (X)")
+abline(h = 0.05, col = "red", lty = 2)
+
+plot(var_expl_Y, type = "b", pch = 19, col = "darkgreen",
+     xlab = "Composante", ylab = "Variance expliquée (%)",
+     main = "Variance expliquée - Protein (Y)")
+abline(h = 0.05, col = "red", lty = 2)
+par(mfrow = c(1,1))
+```
+
+```{r, fig.width=14, fig.height=7}
+# Variance expliquée par composante
+var_expl_X <- pls_res$prop_expl_var$X
+var_expl_Y <- pls_res$prop_expl_var$Y
+
+# Préparer les deux datasets pour ggplot
+df_var <- data.frame(
+  Composante = rep(1:length(var_expl_X), 2),
+  Variance = c(var_expl_X, var_expl_Y),
+  Bloc = rep(c("RNA (X)", "Protein (Y)"), each = length(var_expl_X))
+)
+
+# Elbow plot
+ggplot(df_var, aes(x = Composante, y = Variance, color = Bloc)) +
+  geom_point(size = 3) +
+  geom_line(size = 1) +
+  geom_vline(xintercept = 2, linetype = "dashed", color = "red") +  # composante optimale
+  theme_minimal() +
+  labs(
+    title = "Elbow plot - PLS RNA → Protein",
+    x = "Composante",
+    y = "Variance expliquée",
+    color = "Bloc"
+  ) +
+  scale_color_manual(values = c("steelblue", "darkgreen"))
+```
+```{r, fig.width=40, fig.height=20}
+# Graphique des individus (scores)
+plotIndiv(
+  pls_res,
+  comp = c(1,2),
+  group = Y,
+  legend = TRUE,
+  ellipse = TRUE,
+  title = "PLS RNA → Protein - individus"
+)
+
+get_top20 <- function(loadings, bloc_name){
+  df <- as.data.frame(loadings)
+  df$Nom <- rownames(df)
+  df_long <- pivot_longer(df, cols = starts_with("Comp"), names_to = "Composante", values_to = "Loading")
+  df_long <- df_long %>%
+    group_by(Composante) %>%
+    slice_max(order_by = abs(Loading), n = 20) %>%
+    ungroup() %>%
+    mutate(Bloc = bloc_name)
+  return(df_long)
+}
+
+top20_X <- get_top20(pls_res$loadings$X, "RNA")
+top20_Y <- get_top20(pls_res$loadings$Y, "Protein")
+
+top20_all <- bind_rows(top20_X, top20_Y)
+
+# -----------------------------
+# Barplot ggplot2
+# -----------------------------
+ggplot(top20_all, aes(x = reorder(Nom, Loading), y = Loading, fill = Bloc)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~Composante, scales = "free_y") +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Top 20 variables contributives PLS RNA → Protein",
+    x = "Variable",
+    y = "Loading"
+  ) +
+  scale_fill_manual(values = c("RNA" = "steelblue", "Protein" = "darkgreen"))
+
+# Arrow plot (correlation circle)
+plotArrow(pls_res,
+          comp = c(1,2),
+          group = Y,
+          var.names = TRUE,
+          title = "PLS RNA → Protein - arrow plot")
+```
+
+```{r}
+# Scores des composantes
+scores_X <- pls_res$variates$X
+scores_Y <- pls_res$variates$Y
+
+# Corrélation des composantes correspondantes
+cor_comp1 <- cor(scores_X[,1], scores_Y[,1])
+cor_comp2 <- cor(scores_X[,2], scores_Y[,2])
+
+cor_comp1
+cor_comp2
+```
+
+**Commentaire :** 
+
+*- Composante 1* (cor = 0.88) : forte corrélation entre la première composante RNA et Protein.
+Cela signifie que les variations transcriptomiques capturent bien la variation protéique.
+Les gènes les plus contributifs de cette composante sont donc de bons candidats pour expliquer la variation des protéines.
+
+*- Composante 2* (cor = 0.96) : corrélation encore plus forte.
+Même les signaux secondaires sont très concordants entre RNA et Protein.
+Cela montre que les deux blocs sont très alignés, et que la structure globale du transcriptome se reflète dans le protéome.
+
+La PLS révèle une forte cohérence entre les profils RNA et protéine dans ce jeu de données. Les gènes et protéines les plus contributifs des composantes 1 et 2 sont des biomarqueurs potentiels pour différencier les groupes IR vs IS.
+
+
+## *b. sPLS*
+
+```{r, fig.width=14, fig.height=7}
+# -----------------------------
+# 1. Définir les blocs
+# -----------------------------
+library(fastDummies)
+
+# Blocks X
+blocks <- list(
+  RNA = rna_scaled,
+  Protein = prot_scaled,
+  Cytokine = cyto_scaled
+)
+
+# Bloc réponse : facteur → matrice binaire
+Y_block <- fastDummies::dummy_cols(
+  data.frame(mode = data_t2d$sample_info$mode),
+  select_columns = "mode",
+  remove_first_dummy = FALSE,
+  remove_selected_columns = TRUE
+)
+Y_block <- as.matrix(Y_block)
+
+rownames(Y_block) <- rownames(blocks$RNA)
+
+# sPLS multi-blocs supervisée
+spls_res <- block.spls(
+  X = blocks,
+  Y = Y_block,
+  ncomp = 2,
+  keepX = list(
+    RNA = c(10, 5),
+    Protein = c(10, 5),
+    Cytokine = c(5, 5)
+  ),
+  scale = TRUE
+)
+
+# -----------------------------
+# 2. Graphiques
+# -----------------------------
+
+# Individus (scores)
+plotIndiv(
+  spls_res,
+  comp = c(1,2),
+  group = factor(data_t2d$sample_info$mode),
+  legend = TRUE,
+  ellipse = TRUE,
+  title = "sPLS multi-blocs - individus"
+)
+
+# Variables (loadings) - plots séparés
+for(bloc_name in names(blocks)){
+  plotVar(
+    spls_res,
+    comp = 1:2,
+    block = bloc_name,
+    var.names = TRUE,
+    title = paste0("sPLS - Variables ", bloc_name)
+  )
+}
+
+# Arrow plot global
+plotArrow(
+  spls_res,
+  comp = 1:2,
+  group = factor(data_t2d$sample_info$mode),
+  var.names = TRUE,
+  title = "sPLS multi-blocs - arrow plot"
+)
+
+# -----------------------------
+# 3. Variables retenues par bloc et composante
+# -----------------------------
+selected_vars_spls <- list()
+
+for(bloc_name in names(blocks)){
+  selected_vars_spls[[bloc_name]] <- list()
+  ncomp_bloc <- ncol(spls_res$loadings[[bloc_name]])
+  
+  for(comp in 1:ncomp_bloc){
+    loadings <- spls_res$loadings[[bloc_name]][, comp, drop = FALSE]
+    selected_vars_spls[[bloc_name]][[comp]] <- rownames(loadings)[abs(loadings) > 0]
+  }
+}
+
+selected_vars_spls
+
+# -----------------------------
+# 4. Optionnel : top variables en barplot ggplot2 par bloc
+# -----------------------------
+top_vars_list <- list()
+for(bloc_name in names(selected_vars_spls)){
+  for(comp in seq_along(selected_vars_spls[[bloc_name]])){
+    vars <- selected_vars_spls[[bloc_name]][[comp]]
+    loadings <- spls_res$loadings[[bloc_name]][vars, comp]
+    df <- data.frame(
+      Nom = vars,
+      Loading = loadings,
+      Bloc = bloc_name,
+      Composante = paste0("Comp", comp),
+      stringsAsFactors = FALSE
+    )
+    top_vars_list[[paste0(bloc_name, "_Comp", comp)]] <- df
+  }
+}
+
+top_vars_df <- bind_rows(top_vars_list)
+
+ggplot(top_vars_df, aes(x = reorder(Nom, Loading), y = Loading, fill = Bloc)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~Composante, scales = "free_y") +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Top variables contributives sPLS par bloc",
+    x = "Variable",
+    y = "Loading"
+  ) +
+  scale_fill_manual(values = c("RNA" = "steelblue", "Protein" = "darkgreen", "Cytokine" = "orange"))
+
+```
+
+**Commentaire :** 
+
+- Concernant le bloc RNA, PC1 regroupe les gènes qui traduisent la variation principale du transcriptome, et qui se reflète dans le protéome et la cytokine : prolifération, apoptose, modifications post-transcriptionnelles. Ce sont donc des candidats clés pour expliquer la différence IR vs IS.
+
+PC2 capture un signal secondaire, moins dominant que PC1 mais toujours cohérent avec la régulation post-transcriptionnelle et le trafficking des protéines.
+
+
+- Concernant le bloc protein, PC1 regroupe des protéines impliquées dans l’inflammation, la coagulation et l’activation du complément. Ces variations reflètent probablement la différence entre les profils circulants IS et IR, avec un accent sur les réponses immunitaires et inflammatoires.
+
+PC2 semble capter un axe plus métabolique et hormonal, moins directement inflammatoire. On retrouve des protéines qui peuvent être impliquées dans le transport de facteurs circulants, le métabolisme lipidique ou la régulation hormonale. Cela complète l’information de PC1 en distinguant les groupes selon des variations métaboliques et physiologiques moins liées à l’inflammation.
+
+- Concernant le bloc cytokyne, PC1 met en évidence un axe fortement inflammatoire et angiogénique. Les cytokines les plus contributives incluent EOTAXIN et MCP1, qui sont impliquées dans le recrutement des éosinophiles et des monocytes/macrophages, respectivement, suggérant une activation marquée des réponses immunitaires innées. Les facteurs de croissance et d’angiogenèse tels que VEGFD, EGF et PDGFBB apparaissent également parmi les features les plus discriminantes, indiquant que cette composante reflète non seulement la variabilité des réponses inflammatoires mais aussi l’état du remodelage vasculaire et de la régénération tissulaire. En résumé, PC1 semble représenter un profil global combinant inflammation, recrutement cellulaire et potentiel angiogénique, qui distingue clairement les individus IR des individus IS.
+
+PC2 capture des variations plus subtiles mais biologiquement significatives, orientées vers la régulation immunitaire adaptative et l’interaction métabolisme‑immunité. On y retrouve IL4, cytokine clé de la polarisation Th2 et de la réponse humorale, et IL17A, impliquée dans l’inflammation et l’activation des leucocytes. GM-CSF est également contributive, reflétant l’activation et la prolifération des cellules myéloïdes, tandis que LEPTIN introduit une dimension métabolique, liant l’état énergétique à la modulation immunitaire. Enfin, ENA78 souligne la composante inflammatoire liée au recrutement des neutrophiles. Cette composante semble donc représenter un axe de coordination entre l’immunité adaptative, l’activation cellulaire et la régulation métabolique, complétant l’information fournie par PC1 sur les différences IR vs IS.
+
+## *c. Analyse d'enrichissement*
+
+```{r, fig.width=14, fig.height=7}
+# -----------------------------
+# 1. Extraire les top variables du PLS RNA→Protein
+# -----------------------------
+# Top 50 par bloc, composante 1
+top_genes_rna <- rownames(pls_res$loadings$X)[order(abs(pls_res$loadings$X[,1]), decreasing = TRUE)[1:50]]
+top_genes_prot <- rownames(pls_res$loadings$Y)[order(abs(pls_res$loadings$Y[,1]), decreasing = TRUE)[1:50]]
+
+# -----------------------------
+# 2. Convertir les identifiants en SYMBOL humains
+# RNA : ENSEMBL → SYMBOL
+rna_map <- AnnotationDbi::select(
+  org.Hs.eg.db,
+  keys = top_genes_rna,
+  keytype = "ENSEMBL",
+  columns = c("SYMBOL")
+)
+
+# Protein : UNIPROT → SYMBOL
+prot_map <- AnnotationDbi::select(
+  org.Hs.eg.db,
+  keys = top_genes_prot,
+  keytype = "UNIPROT",
+  columns = c("SYMBOL")
+)
+
+# Combiner tous les SYMBOLs et retirer NA
+top_genes_symbol <- unique(c(rna_map$SYMBOL, prot_map$SYMBOL))
+top_genes_symbol <- top_genes_symbol[!is.na(top_genes_symbol)]
+
+# Vérification
+print(top_genes_symbol)
+
+# -----------------------------
+# 3. Analyse d'enrichissement GO/Reactome
+# -----------------------------
+if(length(top_genes_symbol) > 0){
+  gost_res <- gost(
+    query = top_genes_symbol,
+    organism = "hsapiens",
+    sources = c("GO:BP", "REAC"),
+    significant = TRUE,          # filtrer les termes significatifs
+    correction_method = "fdr"
+  )
+  
+  # -----------------------------
+  # 4. Vérification des résultats
+  # -----------------------------
+  if(!is.null(gost_res$result) && nrow(gost_res$result) > 0){
+    
+    # Top 10 termes enrichis par p-value
+    top10 <- gost_res$result %>%
+      arrange(p_value) %>%
+      slice_head(n = 10)
+    
+    # Barplot
+    ggplot(top10, aes(x = reorder(term_name, -log10(p_value)),
+                      y = -log10(p_value),
+                      fill = source)) +
+      geom_bar(stat = "identity") +
+      coord_flip() +
+      labs(x = "Pathway / GO term",
+           y = "-log10(p-value)",
+           title = "Enrichissement GO (BP) / Reactome - Top 10") +
+      theme_minimal()
+    
+  } else {
+    message("Aucun terme enrichi trouvé pour ces gènes/protéines.")
+  }
+  
+} else {
+  message("Aucun gène convertible en SYMBOL humain trouvé. Vérifie tes identifiants.")
+}
+```
+
+**Commentaire :** L’analyse d’enrichissement GO/Reactome des gènes et protéines les plus discriminants (issus de la PLS RNA→Protein) met en évidence une surreprésentation de processus liés à la réponse inflammatoire, au métabolisme lipidique et au transport du fer, ainsi qu’à des voies de signalisation hormonale et de stress oxydatif.
+Ces voies sont cohérentes avec les différences physiopathologiques attendues entre les sujets IR et IS, notamment l’activation de la réponse immune innée et les perturbations du métabolisme énergétique.
+
+Ces résultats sont cohérents avec ceux obtenus lors des analyses précédentes.
+
+```{r}
+
+```
+
