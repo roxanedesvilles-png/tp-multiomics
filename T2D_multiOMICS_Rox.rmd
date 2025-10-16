@@ -1561,12 +1561,11 @@ Concernant le module du seed, il a une taille de 121 noeuds. C'est un module mé
 ### c.5. Analyse d'enrichissement
 
 ```{r}
-tmpdir <- "~/R/temp_clusterProfiler"
-dir.create(tmpdir, showWarnings = FALSE, recursive = TRUE)
+# Crée un dossier temporaire accessible
+tmpdir <- "~/Rtmp_clusterProfiler"
+dir.create(tmpdir, showWarnings = FALSE)
 Sys.setenv(TMPDIR = tmpdir)
-```
 
-```{r}
 # -----------------------------
 # 1. Récupérer les nœuds du module 8
 # -----------------------------
