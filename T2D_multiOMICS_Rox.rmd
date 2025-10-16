@@ -30,7 +30,6 @@ library(org.Hs.eg.db)
 library(AnnotationDbi)
 library(mixOmics)
 library(gprofiler2)
-library(netOmics)
 ```
 
 # **1. Contexte et objectifs - Présentation du jeu de données**
@@ -499,22 +498,16 @@ ggplot(pca_scores_cyto, aes(x=PC1, y=PC2, color=class)) +
 
 ```{r, fig.width=14, fig.height=7}
 # Préparer les blocs
-
-# Y = classe IS / IR
-Y <- factor(data_t2d$sample_info$mode)
-
-# Les blocs
 blocks <- list(
   RNA = rna_scaled,
   Protein = prot_scaled,
   Cytokine = cyto_scaled
 )
 
-# sPCA multi-blocs supervisée
-spca_res <- block.splsda(
+# sPCA multi-blocs non supervisée
+spca_res <- block.sparse.pca(
   X = blocks,
-  Y = Y,
-  ncomp = 2,   # on garde 2 composantes
+  ncomp = 2,   # nombre de composantes
   keepX = list(
     RNA = c(10, 5),       # 10 features sur comp1, 5 sur comp2
     Protein = c(10, 5),
@@ -523,14 +516,14 @@ spca_res <- block.splsda(
   scale = TRUE
 )
 
-# Visualiser les échantillons
-plotIndiv(spca_res, group = Y, legend = TRUE, ellipse = TRUE, title = "sPCA multi-blocs")
+# Visualiser les échantillons (non supervisée, pas de Y)
+plotIndiv(spca_res, legend = TRUE, ellipse = TRUE, title = "sPCA multi-blocs")
 
 # Extraire les variables retenues
 selected_vars <- lapply(names(blocks), function(bloc) {
   lapply(1:2, function(comp) {
     sv <- selectVar(spca_res, block = bloc, comp = comp)
-    sv[[bloc]]$name   # $name pour chaque bloc
+    sv[[bloc]]$name   # noms des variables
   })
 })
 names(selected_vars) <- names(blocks)
@@ -1246,47 +1239,68 @@ network(final.diablo.model, blocks = c(1,2,3),
 
 # **7. Analyse en réseau**
 
-```{r GRN-analysis, message=FALSE, warning=FALSE}
-library(netOmics)
-library(igraph)
+```{r}
+set.seed(1234)
+# Filtrage
+rna_keep_bis <- !is.na(cv_rna) & cv_rna >= 1.5
+rna_filt_bis <- rna_mat[, rna_keep, drop = FALSE]
 
-# 1. Extraire les gènes sélectionnés par DIABLO
-selected_genes <- selectVar(final.diablo.model, block = "RNA")$RNA$name
+# Scaling
+rna_scaled_bis <- scale(rna_filt)
+dim(rna_scaled_bis)
 
-# 2. Filtrer la matrice RNA pour ne garder que ces gènes
-rna_filtered <- rna_scaled[, selected_genes, drop = FALSE]
+mi  <- build.mim(rna_scaled_bis, estimator = "spearman")
+clr_mat <- clr(mi)
 
-# 3. Construire le GRN avec corrélation
-# cor.netOmics retourne une liste avec $adjacency
-grn_result <- cor.netOmics(rna_filtered)
+thr <- quantile(clr_mat[clr_mat > 0], 0.95)
+clr_mat[clr_mat < thr] <- 0
+diag(clr_mat) <- 0
 
-# 4. Convertir en objet igraph
-grn_igraph <- graph_from_adjacency_matrix(
-  grn_result$adjacency,
-  mode = "undirected",
-  weighted = TRUE,
-  diag = FALSE
+gene_names <- colnames(rna_scaled_bis)
+
+isolated_genes <- gene_names[rowSums(clr_mat) == 0]
+
+g_grn <- graph_from_adjacency_matrix(clr_mat, mode = "undirected", weighted = TRUE, diag = FALSE)
+
+
+nb_noeuds   <- vcount(g_grn)
+nb_aretes   <- ecount(g_grn)
+degre       <- degree(g_grn)
+isoles_idx  <- which(degre == 0)
+hub_gene    <- names(which.max(degre))
+hub_deg     <- max(degre)
+
+list(
+  noeuds = nb_noeuds,
+  aretes = nb_aretes,
+  nb_isoles = length(isoles_idx),
+  hub_gene = hub_gene,
+  connexions_hub = hub_deg
 )
 
-# 5. Analyse du réseau
-cat("Nombre de nœuds :", gorder(grn_igraph), "\n")
-cat("Nombre d'arêtes :", gsize(grn_igraph), "\n")
-cat("Nombre de nœuds isolés :", sum(degree(grn_igraph) == 0), "\n")
+hist(degree(g_grn), breaks = 50, main = "Distribution des degrés", xlab = "Degré", ylab = "Fréquence")
 
-# Distribution des degrés
-degree_dist <- degree(grn_igraph)
-hist(degree_dist, main = "Distribution des degrés", xlab = "Degré")
+BioGRID <- readRDS("human_ppi.Rds")
+str(BioGRID)
+prot_ids <- colnames(prot_scaled)
+ppi_edges <- subset(BioGRID, A %in% prot_ids & B %in% prot_ids)
 
-# Gène le plus connecté
-most_connected_gene <- names(which.max(degree_dist))
-cat("Gène le plus connecté :", most_connected_gene, "\n")
+g_ppi <- graph_from_data_frame(ppi_edges, directed = FALSE, vertices = data.frame(name = prot_ids))
 
-# 6. Visualisation basique
-plot(
-  grn_igraph,
-  vertex.size = 5,
-  vertex.label = NA,
-  edge.width = E(grn_igraph)$weight * 2,
-  main = "GRN - gènes filtrés par DIABLO"
+nb_noeuds   <- vcount(g_ppi)
+nb_aretes   <- ecount(g_ppi)
+degre       <- degree(g_ppi)
+isoles_idx  <- which(degre == 0)
+hub_prot    <- names(which.max(degre))
+hub_deg     <- max(degre)
+
+list(
+  noeuds = nb_noeuds,
+  aretes = nb_aretes,
+  nb_isoles = length(isoles_idx),
+  proteine_hub = hub_prot,
+  connexions_hub = hub_deg
 )
+
+hist(degre, breaks = 50, main = "Distribution des degrés (PPI)", xlab = "Degré", ylab = "Fréquence")
 ```
