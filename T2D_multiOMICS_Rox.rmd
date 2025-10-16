@@ -536,24 +536,22 @@ names(selected_vars) <- names(blocks)
 # Affichage
 selected_vars
 ```
-**Commentaire : **
+
+**Commentaire :**
 
 L'analyse sPCA sur les trois blocs RNA, protein et cytokyne met en évidence les gènes, protéines et cytokines les plus discriminantes entre les classes IR et IS.
 
-- Concernant le bloc RNA, parmi les 10 features sélectionnées sur PC1, on retrouve des gènes impliqués dans la régulation énergétique (donc liés à la réponse métabolique à l'insuline et au glucose, comme *PRKAB1*). On retrouve aussi des gènes impliqués dans la méthylation et la stabilité de l'ARN (comme *METTL14* dont l'implication a été décrite dans la sensibilité à l'insuline), et des gènes impliqués dans la signalisation inflammatoire ou structurelle (comme *CEACAM6*, souvent surexprimé dans un contexte inflammatoire et métabolique).
+-   Concernant le bloc RNA, parmi les 10 features sélectionnées sur PC1, on retrouve des gènes impliqués dans la régulation énergétique (donc liés à la réponse métabolique à l'insuline et au glucose, comme *PRKAB1*). On retrouve aussi des gènes impliqués dans la méthylation et la stabilité de l'ARN (comme *METTL14* dont l'implication a été décrite dans la sensibilité à l'insuline), et des gènes impliqués dans la signalisation inflammatoire ou structurelle (comme *CEACAM6*, souvent surexprimé dans un contexte inflammatoire et métabolique).
 
-La deuxième composante PC2 semble capturer des différences plus subtiles liées à la régulation transcriptionnelle et épigénétique, à la dynamique du cytosquelette et au contrôle de la traduction, complétant ainsi l’information de PC1 sur le métabolisme énergétique et la signalisation cellulaire
+    La deuxième composante PC2 semble capturer des différences plus subtiles liées à la régulation transcriptionnelle et épigénétique, à la dynamique du cytosquelette et au contrôle de la traduction, complétant ainsi l’information de PC1 sur le métabolisme énergétique et la signalisation cellulaire.
 
+-   Concernant le bloc protein, PC1 capture majoritairement des axes liés à l’inflammation, la réponse immunitaire et le métabolisme lipidique (métabolisme des triglycérides), avec un mélange de protéines plasmatiques impliquées dans la coagulation (Fibrinogène, Plasminogène), et la régulation du complément. Ces variations peuvent refléter les différences entre les groupes IS et IR au niveau du profil protéique circulant et de la réponse inflammatoire.
 
-- Concernant le bloc protein, PC1 capture majoritairement des axes liés à l’inflammation, la réponse immunitaire et le métabolisme lipidique (métabolisme des triglycérides), avec un mélange de protéines plasmatiques impliquées dans la coagulation (Fibrinogène, Plasminogène), et la régulation du complément. Ces variations peuvent refléter les différences entre les groupes IS et IR au niveau du profil protéique circulant et de la réponse inflammatoire.
+    PC2 semble capter un axe métabolique et hormonal, avec des protéines liées au transport du fer (Transferrine), lipides (Apolipoprotéines), régulation hormonale et coagulation (Prothrombine). Ces variations permettent de distinguer les classes IS/IR selon des variations moins directement inflammatoires mais plus liées au métabolisme et au stress physiologique.
 
-PC2 semble capter un axe métabolique et hormonal, avec des protéines liées au transport du fer (Transferrine), lipides (Apolipoprotéines), régulation hormonale et coagulation (Prothrombine). Ces variations permettent de distinguer les classes IS/IR selon des variations moins directement inflammatoires mais plus liées au métabolisme et au stress physiologique.
+-   Concernant le bloc cytokyne, PC1 capture un axe inflammatoire et angiogénique. Les features sélectionnés sont principalement liés à : l'inflammation et recrutement cellulaire (MCP1, EOTAXIN, ICAM1, ENA78, IL17A/F), et l'angiogenèse et régénération tissulaire (VEGF, VEGFD, PDGFBB, EGF). Cela suggère que la première composante reflète la variabilité des réponses immunes et vasculaires entre les classes IS et IR.
 
-
-- Concernant le bloc cytokyne, PC1 capture un axe inflammatoire et angiogénique. Les features sélectionnés sont principalement liés à : l'inflammation et recrutement cellulaire (MCP1, EOTAXIN, ICAM1, ENA78, IL17A/F), et l'angiogenèse et régénération tissulaire (VEGF, VEGFD, PDGFBB, EGF). Cela suggère que la première composante reflète la variabilité des réponses immunes et vasculaires entre les classes IS et IR.
-
-PC2 semble capturer un axe métabolique et immunitaire orienté Th2 (lymphocytes TCD4+ impliqués dans la réponse anti-parasitaire et humorale) / activation cellulaire : cytokines liées à l’inflammation et activation des leucocytes (GM-CSF, RANTES, RESISTIN), et cytokines orientées réponse adaptative et métabolique (IL4, LEPTIN).
-
+    PC2 semble capturer un axe métabolique et immunitaire orienté Th2 (lymphocytes TCD4+ impliqués dans la réponse anti-parasitaire et humorale) / activation cellulaire : cytokines liées à l’inflammation et activation des leucocytes (GM-CSF, RANTES, RESISTIN), et cytokines orientées réponse adaptative et métabolique (IL4, LEPTIN).
 
 **Identifier le bloc le plus informatif :**
 
@@ -566,6 +564,7 @@ cor(spca_res$variates$Protein[,1], spca_res$variates$Cytokine[,1])
 
 plotArrow(spca_res, title = "Contribution des blocs")
 ```
+
 Les valeurs ci-dessus correspondent aux corrélations entre chaque bloc et la variable Y (les classes IS et IR), sur chaque composante. Le bloc cytokyne est le plus informatif des 3 blocs (0.098/0.064).
 
-Les valeurs pour $Y et les corrélations globales (~0.92–0.95) montre que la sPCA capte bien la structure globale, mais le signal le plus discriminant vient surtout des cytokines.
+Les valeurs pour \$Y et les corrélations globales (\~0.92–0.95) montre que la sPCA capte bien la structure globale, mais le signal le plus discriminant vient surtout des cytokines.
