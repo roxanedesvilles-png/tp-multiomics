@@ -33,6 +33,7 @@ library(mixOmics)
 library(gprofiler2)
 library(minet)
 library(clusterProfiler)
+library(tidygraph)
 ```
 
 # **1. Contexte et objectifs - Présentation du jeu de données**
@@ -1414,6 +1415,65 @@ res <- list(
 res
 ```
 
+```{r, fig.width=14, fig.height=7}
+tg <- as_tbl_graph(g_comb)  # convertir ton réseau igraph combiné
+tg <- tg %>% mutate(type = case_when(
+  name %in% genes ~ "Gene",
+  name %in% proteins ~ "Protein",
+  TRUE ~ "TF"
+))
+
+# Convertir en tidygraph
+tg <- as_tbl_graph(g_comb)
+
+# Ajouter un attribut type pour nœuds
+tg <- tg %>% mutate(type = factor(case_when(
+  name %in% genes ~ "Gene",
+  name %in% proteins ~ "Protein",
+  TRUE ~ "TF"
+)))
+
+set.seed(123)
+ggraph(tg, layout="fr") +
+  geom_edge_link(alpha=0.6) +        # juste alpha pour toutes les arêtes
+  geom_node_point(aes(color=type), size=4) +
+  theme_void() +
+  scale_color_manual(values=c("Gene"="violet", "Protein"="red", "TF"="orange")) +
+  ggtitle("Réseau combiné GRN + PPI + TF")
+
+```
+
+```{r, fig.width=14, fig.height=7}
+# Ne garder que les nœuds existants dans le graphe
+selected_nodes <- selected_nodes[selected_nodes %in% V(g_comb)$name]
+
+# Extraire les arêtes entre ces nœuds
+sub_edges <- E(g_comb)[.from(selected_nodes) & .to(selected_nodes)]
+sub_net <- subgraph.edges(g_comb, eids=sub_edges, delete.vertices = TRUE)
+
+# Couleurs par type
+V(sub_net)$color <- ifelse(V(sub_net)$name %in% genes, "violet",
+                           ifelse(V(sub_net)$name %in% proteins, "red","green"))
+
+# Plot
+set.seed(123)
+plot(sub_net, vertex.size=15, vertex.label.cex=0.9, edge.arrow.size=0.6,
+     main="Sous-réseau simplifié multi-omique")
+legend("topright", legend=c("Gene","Protein","TF/Cytokine"), col=c("violet","red","green"), pch=19)
+```
+
+**Commentaire :**
+
+1022 nœuds → tous les gènes et protéines combinés dans le réseau intégré.
+
+7473 arêtes → toutes les interactions (GRN, PPI, et croisées).
+
+751 arêtes cross → interactions entre blocs (gène → protéine et TF → gène).
+
+6 gènes codant directement pour des protéines → peu, mais c’est normal, tous les gènes ne codent pas pour les protéines du PPI filtré.
+
+745 TF → gène → la majorité des liens inter-blocs viennent de la régulation transcriptionnelle.
+
 ### c.2. Analyse de modularité
 
 ```{r}
@@ -1430,7 +1490,7 @@ if ("weight" %in% edge_attr_names(g_comb_u)) {
 }
 
 # Supprimer les self-loops et éventuelles anomalies
-g_comb_u <- simplify(g_comb_u, remove.loops = TRUE, remove.multiple = TRUE)
+g_comb_u <- igraph::simplify(g_comb_u, remove.loops = TRUE, remove.multiple = TRUE)
 
 # Louvain
 communities <- cluster_louvain(g_comb_u)
@@ -1447,11 +1507,11 @@ head(sort(module_sizes, decreasing = TRUE))
 
 **Commentaire :**
 
-114 modules → donc ton réseau combiné (gène–protéine–TF) est assez modulaire, avec beaucoup de sous-groupes cohérents biologiquement.
+115 modules → donc ton réseau combiné (gène–protéine–TF) est assez modulaire, avec beaucoup de sous-groupes cohérents biologiquement.
 
-Modularité = 0.684 → c’est élevé → ton graphe est fortement structuré (claire séparation entre modules).
+Modularité = 0.688 → c’est élevé → ton graphe est fortement structuré (claire séparation entre modules).
 
-Les plus gros modules (de 90 à 120 nœuds) sont sans doute les principaux complexes ou voies biologiques.
+Les plus gros modules (de 77 à 121 nœuds) sont sans doute les principaux complexes ou voies biologiques.
 
 ### c.3. Choix du noeud d'intérêt et random walk
 
@@ -1638,4 +1698,3 @@ if(length(module_8_genes) >= 10) {
   message("Module 8 trop petit pour enrichGO (", length(module_8_genes), " gènes).")
 }
 ```
-
