@@ -398,7 +398,7 @@ ggplot(pca_scores_rna, aes(x=PC1, y=PC2, color=class)) +
   labs(title="PCA RNA avec outlier", x="PC1", y="PC2")
 ```
 
-**Commentaire de l'ellipse :**Les deux groupes IS et IR ont une variance similaire sur PC1 et 2. La dispersion des échantillons est comparable. Le groupe IS est plus homogène (l'ellipse de IS est incluse dans celle d'IR). Cette PCA montre que les principales sources de variations ne distinguent pas parfaitement les deux groupes. D'autres blocs pourraient mieux montrer cette séparation.
+**Commentaire de l'ellipse :** Les deux groupes IS et IR ont une variance similaire sur PC1 et 2. La dispersion des échantillons est comparable. Le groupe IS est plus homogène (l'ellipse de IS est incluse dans celle d'IR). Cette PCA montre que les principales sources de variations ne distinguent pas parfaitement les deux groupes. D'autres blocs pourraient mieux montrer cette séparation.
 
 L'outlier pourrait avoir un profil transcriptionnel un peu différent.
 
@@ -409,7 +409,7 @@ prot <- prot_scaled
 pca_prot <- pca(prot, ncomp = 5, center = TRUE, scale = TRUE)
 
 # Individus colorés par classe
-plotIndiv(pca_prot, group = data_t2d$sample_info$mode, legend = TRUE, title = "PCA - RNA")
+plotIndiv(pca_prot, group = data_t2d$sample_info$mode, legend = TRUE, title = "PCA - Protein")
 
 # Contribution de chaque PC
 plotVar(pca_prot, title = "Variables - Protein")
@@ -428,7 +428,7 @@ var_expl_prot <- pca_prot$prop_expl_var$X  # vecteur numérique
 # Elbow plot
 plot(var_expl_prot, type="b", pch=19, col="steelblue",
      xlab="Composante principale", ylab="Variance expliquée",
-     main="Elbow plot PCA RNA")
+     main="Elbow plot PCA Protein")
 abline(h=0.155, col="red", lty=2)  # seuil optionnel pour voir les PCs importantes
 ```
 
@@ -446,7 +446,7 @@ ggplot(pca_scores_prot, aes(x=PC1, y=PC2, color=class)) +
   labs(title="PCA Protein", x="PC1", y="PC2")
 ```
 
-**Commentaire de l'ellipse :**Pour la PCA des protéines, les deux premières composantes principales expliquent une proportion plus élevée de variance que pour les données RNA, ce qui indique que la structure globale des protéines est mieux capturée par les deux premières PC. Les ellipses des groupes IS et IR sont horizontales, mais ont des tailles différentes : le groupe IR présente une dispersion plus large, alors que le groupe IS est plus concentré. Contrairement aux RNA, aucun point n’est un outlier et les chevauchements sont limités, ce qui traduit une séparation plus nette des groupes dans l’espace des deux premières composantes.
+**Commentaire de l'ellipse :** Pour la PCA des protéines, les deux premières composantes principales expliquent une proportion plus élevée de variance que pour les données RNA, ce qui indique que la structure globale des protéines est mieux capturée par les deux premières PC. Les ellipses des groupes IS et IR sont horizontales, mais ont des tailles différentes : le groupe IR présente une dispersion plus large, alors que le groupe IS est plus concentré. Contrairement aux RNA, aucun point n’est un outlier et les chevauchements sont limités, ce qui traduit une séparation plus nette des groupes dans l’espace des deux premières composantes.
 
 ### a.3. Pour le bloc cytokyne
 
@@ -455,10 +455,10 @@ cyto <- cyto_scaled
 pca_cyto <- pca(cyto, ncomp = 5, center = TRUE, scale = TRUE)
 
 # Individus colorés par classe
-plotIndiv(pca_cyto, group = data_t2d$sample_info$mode, legend = TRUE, title = "PCA - RNA")
+plotIndiv(pca_cyto, group = data_t2d$sample_info$mode, legend = TRUE, title = "PCA - Cytokine")
 
 # Contribution de chaque PC
-plotVar(pca_cyto, title = "Variables - Protein")
+plotVar(pca_cyto, title = "Variables - Cytokine")
 
 # Évaluer le nombre de PC pertinentes
 pca_cyto$prop_expl_var$X  # vecteur numérique de la variance expliquée par chaque PC
@@ -474,7 +474,7 @@ var_expl_cyto <- pca_cyto$prop_expl_var$X  # vecteur numérique
 # Elbow plot
 plot(var_expl_cyto, type="b", pch=19, col="steelblue",
      xlab="Composante principale", ylab="Variance expliquée",
-     main="Elbow plot PCA RNA")
+     main="Elbow plot PCA Cytokine")
 ```
 
 ```{r, fig.width=14, fig.height=7}
@@ -536,5 +536,36 @@ names(selected_vars) <- names(blocks)
 # Affichage
 selected_vars
 ```
+**Commentaire : **
+
+L'analyse sPCA sur les trois blocs RNA, protein et cytokyne met en évidence les gènes, protéines et cytokines les plus discriminantes entre les classes IR et IS.
+
+- Concernant le bloc RNA, parmi les 10 features sélectionnées sur PC1, on retrouve des gènes impliqués dans la régulation énergétique (donc liés à la réponse métabolique à l'insuline et au glucose, comme *PRKAB1*). On retrouve aussi des gènes impliqués dans la méthylation et la stabilité de l'ARN (comme *METTL14* dont l'implication a été décrite dans la sensibilité à l'insuline), et des gènes impliqués dans la signalisation inflammatoire ou structurelle (comme *CEACAM6*, souvent surexprimé dans un contexte inflammatoire et métabolique).
+
+La deuxième composante PC2 semble capturer des différences plus subtiles liées à la régulation transcriptionnelle et épigénétique, à la dynamique du cytosquelette et au contrôle de la traduction, complétant ainsi l’information de PC1 sur le métabolisme énergétique et la signalisation cellulaire
 
 
+- Concernant le bloc protein, PC1 capture majoritairement des axes liés à l’inflammation, la réponse immunitaire et le métabolisme lipidique (métabolisme des triglycérides), avec un mélange de protéines plasmatiques impliquées dans la coagulation (Fibrinogène, Plasminogène), et la régulation du complément. Ces variations peuvent refléter les différences entre les groupes IS et IR au niveau du profil protéique circulant et de la réponse inflammatoire.
+
+PC2 semble capter un axe métabolique et hormonal, avec des protéines liées au transport du fer (Transferrine), lipides (Apolipoprotéines), régulation hormonale et coagulation (Prothrombine). Ces variations permettent de distinguer les classes IS/IR selon des variations moins directement inflammatoires mais plus liées au métabolisme et au stress physiologique.
+
+
+- Concernant le bloc cytokyne, PC1 capture un axe inflammatoire et angiogénique. Les features sélectionnés sont principalement liés à : l'inflammation et recrutement cellulaire (MCP1, EOTAXIN, ICAM1, ENA78, IL17A/F), et l'angiogenèse et régénération tissulaire (VEGF, VEGFD, PDGFBB, EGF). Cela suggère que la première composante reflète la variabilité des réponses immunes et vasculaires entre les classes IS et IR.
+
+PC2 semble capturer un axe métabolique et immunitaire orienté Th2 (lymphocytes TCD4+ impliqués dans la réponse anti-parasitaire et humorale) / activation cellulaire : cytokines liées à l’inflammation et activation des leucocytes (GM-CSF, RANTES, RESISTIN), et cytokines orientées réponse adaptative et métabolique (IL4, LEPTIN).
+
+
+**Identifier le bloc le plus informatif :**
+
+```{r}
+lapply(spca_res$loadings, function(x) apply(abs(x), 2, mean))
+
+cor(spca_res$variates$RNA[,1], spca_res$variates$Protein[,1])
+cor(spca_res$variates$RNA[,1], spca_res$variates$Cytokine[,1])
+cor(spca_res$variates$Protein[,1], spca_res$variates$Cytokine[,1])
+
+plotArrow(spca_res, title = "Contribution des blocs")
+```
+Les valeurs ci-dessus correspondent aux corrélations entre chaque bloc et la variable Y (les classes IS et IR), sur chaque composante. Le bloc cytokyne est le plus informatif des 3 blocs (0.098/0.064).
+
+Les valeurs pour $Y et les corrélations globales (~0.92–0.95) montre que la sPCA capte bien la structure globale, mais le signal le plus discriminant vient surtout des cytokines.
