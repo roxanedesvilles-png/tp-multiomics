@@ -568,3 +568,76 @@ plotArrow(spca_res, title = "Contribution des blocs")
 Les valeurs ci-dessus correspondent aux corrélations entre chaque bloc et la variable Y (les classes IS et IR), sur chaque composante. Le bloc cytokyne est le plus informatif des 3 blocs (0.098/0.064).
 
 Les valeurs pour \$Y et les corrélations globales (\~0.92–0.95) montre que la sPCA capte bien la structure globale, mais le signal le plus discriminant vient surtout des cytokines.
+
+# **5. Analyse supervisée**
+
+```{r, fig.width=14, fig.height=7}
+# Récupérer toutes les features sélectionnées
+selected_rna <- unlist(selected_vars$RNA)
+selected_prot <- unlist(selected_vars$Protein)
+selected_cyto <- unlist(selected_vars$Cytokine)
+
+# Concaténer les blocs en ne gardant que les features sélectionnées
+X_sel <- cbind(
+  rna_scaled[, selected_rna, drop = FALSE],
+  prot_scaled[, selected_prot, drop = FALSE],
+  cyto_scaled[, selected_cyto, drop = FALSE]
+)
+
+# Y = classe IS / IR
+Y <- factor(data_t2d$sample_info$mode)
+
+# PLS-DA supervisée
+plsda_res <- splsda(X_sel, Y, ncomp = 2)
+
+# Visualiser les échantillons avec ellipses
+plotIndiv(
+  plsda_res,
+  group = Y,
+  legend = TRUE,
+  ellipse = TRUE,
+  title = "PLS-DA multi-blocs (features sélectionnées)"
+)
+```
+
+```{r}
+# Validation croisée
+set.seed(123)  # pour reproductibilité
+perf_res <- perf(plsda_res,
+                 validation = "Mfold",  # k-fold CV
+                 folds = 5,             # 5 folds
+                 progressBar = TRUE,
+                 nrepeat = 10)          # répéter 10 fois
+
+# Erreur de classification globale
+perf_res$error.rate$overall
+
+# Balanced Error Rate (si classes déséquilibrées)
+perf_res$error.rate$BER
+
+# Visualiser la performance par composante
+perf_res$choice.ncomp
+```
+
+```{r, fig.width=14, fig.height=7}
+# Sélection des variables contributives par bloc et composante
+selected_vars_plsda <- lapply(names(blocks), function(bloc) {
+  lapply(1:2, function(comp) {
+    sv <- selectVar(spca_res, block = bloc, comp = comp)
+    sv[[bloc]]$name
+  })
+})
+names(selected_vars_plsda) <- names(blocks)
+
+# Affichage pour chaque bloc
+selected_vars_plsda
+
+# Visualiser la contribution des variables sur PC1 et PC2 (exemple pour RNA)
+plotVar(plsda_res, block = "RNA - protein - cytokyne", comp = 1:2, var.names = TRUE, title = "Contributions RNA PC1/PC2")
+```
+
+**Commentaire :** Pour évaluer la capacité des blocs omiques (RNA, protéines, cytokines) à discriminer les classes IS et IR, nous avons réalisé une PLS-DA sur les blocs concaténés, en utilisant les features sélectionnées par la sPCA.
+
+Le graphique des échantillons montre deux ellipses bien séparées correspondant aux classes IS et IR, sans chevauchement notable. La dispersion intra-groupe est faible, ce qui indique une homogénéité des échantillons au sein de chaque classe. La cross-validation confirme cette observation, avec un taux d’erreur global très faible, indiquant une excellente performance de classification.
+
+Ces résultats suggèrent que la combinaison multi-blocs, en particulier avec les features sélectionnées par la sPCA, capture efficacement la variabilité pertinente entre les groupes et permet de distinguer clairement IS et IR. Cette approche multi-omique est donc plus discriminante que la PCA réalisée bloc par bloc, où certaines ellipses étaient plus étalées ou se chevauchaient.
