@@ -22,6 +22,7 @@ knitr::opts_chunk$set(
 library(dplyr)
 library(tidyr)
 library(ggplot2)
+library(ggraph)
 library(reshape2)
 library(tibble)
 library(purrr)
@@ -30,6 +31,8 @@ library(org.Hs.eg.db)
 library(AnnotationDbi)
 library(mixOmics)
 library(gprofiler2)
+library(minet)
+library(clusterProfiler)
 ```
 
 # **1. Contexte et objectifs - Présentation du jeu de données**
@@ -1236,15 +1239,11 @@ network(final.diablo.model, blocks = c(1,2,3),
         color.node = c('darkorchid', 'brown1', 'lightgreen'), cutoff = 0.78)
 ```
 
-
 # **7. Analyse en réseau**
 
 ## *a. Réseau de régulation génique (GRN)*
 
-```{r}
-library(minet)       # pour build.mim et clr
-library(igraph)      # pour graph_from_adjacency_matrix
-
+```{r, fig.width=14, fig.height=7}
 # 1. Filtrer et scaler RNA (adapte le seuil CV si besoin)
 rna_keep <- !is.na(cv_rna) & cv_rna >= 1.5
 rna_filt <- rna_mat[, rna_keep, drop = FALSE]
@@ -1281,12 +1280,11 @@ hist(degre, breaks = 50, main = "Distribution des degrés", xlab = "Degré", yla
 
 **Commentaire :**
 
-On trouve pour ce réseau : 859 noeuds (gènes présents dans le sous-réseau), 6603 arètes (119 interactions entre elles), aucun noeud isolé (gène n'ayant aucune interaction dans le réseau).
-Le gène le plus connecté est ENSG00000044459 (correpond au gène *CNTLN* codant pour une protéine impliquée dans l’organisation du centrosome et du cytosquelette), qui est connectée à 30 autres gènes.
+On trouve pour ce réseau : 859 noeuds (gènes présents dans le sous-réseau), 6603 arètes (119 interactions entre elles), aucun noeud isolé (gène n'ayant aucune interaction dans le réseau). Le gène le plus connecté est ENSG00000044459 (correpond au gène *CNTLN* codant pour une protéine impliquée dans l’organisation du centrosome et du cytosquelette), qui est connectée à 30 autres gènes.
 
-# *b. Réseau d’interactions protéiques (PPI)*
+## *b. Réseau d’interactions protéiques (PPI)*
 
-```{r}
+```{r, fig.width=14, fig.height=7}
 BioGRID <- readRDS("/Users/roxanedesvilles/Documents/Pharmacie P5 DESCARTES/6A - M2 Bioinformatique biologique (UPc) 2025-2026/S1/UE Bioinformatique des omiques avancées/UE 8 - Production et gestion des big data en biologie/tp-multiomics/human_ppi.Rds")
 str(BioGRID)
 prot_ids <- colnames(prot_scaled)
@@ -1314,9 +1312,7 @@ hist(degre, breaks = 50, main = "Distribution des degrés (PPI)", xlab = "Degré
 
 **Commentaire :**
 
-On trouve pour ce réseau : 163 noeuds (protéines présentes dans le sous-réseau), 119 arètes (119 interactions entre elles), 88 noeuds isolés (protéines n'ayant aucune interaction dans le réseau).
-La protéine la plus connectée est P02647 (correspond à l'Apolipoprotéine A1 humaine), qui est connectée à 19 autres protéines.
-
+On trouve pour ce réseau : 163 noeuds (protéines présentes dans le sous-réseau), 119 arètes (119 interactions entre elles), 88 noeuds isolés (protéines n'ayant aucune interaction dans le réseau). La protéine la plus connectée est P02647 (correspond à l'Apolipoprotéine A1 humaine), qui est connectée à 19 autres protéines.
 
 ```{r}
 library(AnnotationDbi)
@@ -1333,8 +1329,6 @@ map <- na.omit(unique(map[c("ENSEMBL","UNIPROT")]))
 gp_edges <- subset(map, UNIPROT %in% prots)
 colnames(gp_edges) <- c("gene","protein")  # ENSEMBL, UNIPROT
 ```
-
-
 
 ```{r}
 tfdb <- readRDS("/Users/roxanedesvilles/Documents/Pharmacie P5 DESCARTES/6A - M2 Bioinformatique biologique (UPc) 2025-2026/S1/UE Bioinformatique des omiques avancées/UE 8 - Production et gestion des big data en biologie/tp-multiomics/human_TF_to_targeted_gene.Rds")
@@ -1354,8 +1348,6 @@ head(tf_edges)
 dim(tf_edges)
 ```
 
-
-
 ```{r}
 tf_df <- data.frame(from = tf_edges$tf, to = tf_edges$gene, type = "TF", directed = TRUE)
 g_tf <- graph_from_data_frame(tf_df, directed = TRUE)
@@ -1365,9 +1357,7 @@ ecount(g_tf)   # nombre d'arêtes TF→gène
 
 ```
 
-
-
-```{r}
+```{r, fig.width=14, fig.height=7}
 set.seed(1234)
 plot(
   g_tf,
@@ -1378,6 +1368,275 @@ plot(
 )
 ```
 
-# *c. Connexion gène–protéine*
+## *c. Connexion gène–protéine*
 
+### c.1. Connexion
+
+```{r}
+genes <- V(g_grn)$name
+proteins <- V(g_ppi)$name
+
+
+gene_coding_prot <- readRDS("/Users/roxanedesvilles/Documents/Pharmacie P5 DESCARTES/6A - M2 Bioinformatique biologique (UPc) 2025-2026/S1/UE Bioinformatique des omiques avancées/UE 8 - Production et gestion des big data en biologie/tp-multiomics/human_gene_to_coding_protein.Rds")
+prot_tf_gene <- readRDS("/Users/roxanedesvilles/Documents/Pharmacie P5 DESCARTES/6A - M2 Bioinformatique biologique (UPc) 2025-2026/S1/UE Bioinformatique des omiques avancées/UE 8 - Production et gestion des big data en biologie/tp-multiomics/human_TF_to_targeted_gene.Rds")
+
+
+names(gene_coding_prot) <- c("gene_id", "protein_id")
+names(prot_tf_gene)     <- c("protein_id", "gene_id")
+```
+
+```{r}
+E_gene_prot <- gene_coding_prot %>%
+  filter(gene_id %in% genes, protein_id %in% proteins) %>%
+  transmute(from = gene_id, to = protein_id, type = "gene_to_protein")
+
+
+E_tf_gene <- prot_tf_gene %>%
+  filter(protein_id %in% proteins, gene_id %in% genes) %>%
+  transmute(from = protein_id, to = gene_id, type = "TF_to_gene")
+```
+
+```{r}
+g_comb <- disjoint_union(g_grn, g_ppi)
+
+E_cross <- bind_rows(E_gene_prot, E_tf_gene)
+g_comb <- g_comb + edges(as.vector(t(E_cross[, c("from", "to")])), type = E_cross$type)
+```
+
+```{r}
+res <- list(
+  noeuds_total    = vcount(g_comb),
+  aretes_total    = ecount(g_comb),
+  aretes_cross    = nrow(E_cross),
+  n_gene_to_prot  = nrow(E_gene_prot),
+  n_TF_to_gene    = nrow(E_tf_gene)
+)
+res
+```
+
+### c.2. Analyse de modularité
+
+```{r}
+# Convertir le graphe en non orienté proprement
+g_comb_u <- as.undirected(g_comb, mode = "collapse")
+
+# Vérif si un attribut weight existe
+if ("weight" %in% edge_attr_names(g_comb_u)) {
+  # Supprimer les NA ou les remplacer par 1
+  E(g_comb_u)$weight[is.na(E(g_comb_u)$weight)] <- 1
+} else {
+  # S'il n'y a pas de poids, on en crée un uniforme
+  E(g_comb_u)$weight <- 1
+}
+
+# Supprimer les self-loops et éventuelles anomalies
+g_comb_u <- simplify(g_comb_u, remove.loops = TRUE, remove.multiple = TRUE)
+
+# Louvain
+communities <- cluster_louvain(g_comb_u)
+
+# Résumé
+modularity_value <- modularity(communities)
+n_modules <- length(unique(membership(communities)))
+module_sizes <- sizes(communities)
+
+cat("Nombre de modules :", n_modules, "\n")
+cat("Modularité globale :", round(modularity_value, 3), "\n")
+head(sort(module_sizes, decreasing = TRUE))
+```
+
+**Commentaire :**
+
+114 modules → donc ton réseau combiné (gène–protéine–TF) est assez modulaire, avec beaucoup de sous-groupes cohérents biologiquement.
+
+Modularité = 0.684 → c’est élevé → ton graphe est fortement structuré (claire séparation entre modules).
+
+Les plus gros modules (de 90 à 120 nœuds) sont sans doute les principaux complexes ou voies biologiques.
+
+### c.3. Choix du noeud d'intérêt et random walk
+
+```{r}
+V(g_comb_u)$module <- membership(communities)
+
+set.seed(42)
+ggraph(g_comb_u, layout = "fr") +
+  geom_edge_link(alpha = 0.1) +
+  geom_node_point(aes(color = as.factor(module)), size = 2) +
+  theme_void() +
+  ggtitle("Modules du réseau combiné (gène–protéine–TF)")
+```
+
+```{r}
+# identifier un hub
+deg <- degree(g_comb_u)
+head(sort(deg, decreasing = TRUE), 10)
+```
+
+```{r}
+mapIds(org.Hs.eg.db, keys = "P06733", keytype = "UNIPROT", column = "SYMBOL")
+```
+
+### c.4. Random Walk (RW)
+
+**Commentaire :**
+
+Nous avons choisi P06733 (ENO1) comme nœud de départ pour la Random Walk with Restart (RWR) pour trois raisons complémentaires :
+
+-Topologie — ENO1 est le nœud le plus connecté du réseau combiné (degré = 751), donc il agit comme un hub topologique et peut relier plusieurs modules fonctionnels. Étudier sa diffusion informe sur les régions du réseau qui dépendent ou s’organisent autour de ce hub.
+
+-Biologie — ENO1 codant pour l’alpha-énolase, joue un rôle central en glycolyse et possède des fonctions additionnelles (interaction plasminogène, implication dans signalisation/prolifération cellulaire) : il est donc plausible qu’il connecte des modules métabolique, protéique et régulateur.
+
+-Methodologie — partir d’un hub maximise la sensibilité du RWR pour détecter sous-réseaux fortement reliés et met en évidence des modules potentiellement fonctionnels liés au métabolisme et à la régulation cellulaire.
+
+```{r}
+# --- paramètres RWR ---
+seed_node <- "P06733"   # ENO1
+restart_prob <- 0.85    # probabilité de rester au seed (typiquement 0.7-0.85)
+tol <- 1e-6
+max_iter <- 500
+```
+
+```{r}
+# Graphe pour RWR : utiliser g_comb_u (non dirigé) ou g_comb selon ta méthodo
+g_rw <- as.undirected(g_comb, mode = "collapse")
+A <- as_adjacency_matrix(g_rw, attr = NULL, sparse = FALSE)  # ignorons poids si pb
+# normaliser lignes (transition matrix)
+row_sums <- rowSums(A)
+row_sums[row_sums == 0] <- 1
+Pmat <- A / row_sums
+```
+
+```{r}
+# vecteur initial
+n <- vcount(g_rw)
+p0 <- numeric(n)
+names(p0) <- V(g_rw)$name
+p0[seed_node] <- 1
+```
+
+```{r}
+# RWR itératif (power-iteration)
+p <- p0
+for (i in 1:max_iter) {
+  p_new <- (1 - restart_prob) * p0 + restart_prob * (Pmat %*% p)
+  if (max(abs(p_new - p)) < tol) break
+  p <- p_new
+}
+scores <- as.numeric(p)
+names(scores) <- V(g_rw)$name
+scores <- sort(scores, decreasing = TRUE)
+```
+
+```{r}
+# Top résultats
+top10 <- head(scores, 20)
+print(top10)
+```
+
+```{r}
+# Module du seed
+V(g_comb)$module <- membership(communities)  # si pas fait déjà
+seed_module <- V(g_comb)$module[which(V(g_comb)$name == seed_node)]
+cat("Seed module id:", seed_module, " ; size:", sum(V(g_comb)$module == seed_module), "\n")
+```
+
+```{r}
+# Nodes les plus proches et leur module
+top_nodes <- names(head(scores, 100))   # top 100 voisins pondérés
+top_nodes_df <- data.frame(
+  name = top_nodes,
+  score = scores[top_nodes],
+  module = V(g_comb)$module[match(top_nodes, V(g_comb)$name)],
+  stringsAsFactors = FALSE
+)
+head(top_nodes_df, 20)
+```
+
+**Commentaire :**
+
+Le RW permet d’identifier les nœuds les plus accessibles depuis la seed. Les tops noeuds incluent des enzymes glycolytiques (ENO2, PKM, PGAM1, LDHA) et des régulateurs transcriptionnels (HIF1A). Ces noeuds sont fortement connectés dans le module de la seed (module n°8, 121 nœuds).
+
+Concernant le module du seed, il a une taille de 121 noeuds. C'est un module métabolique cohérent, centré sur la glycolyse et régulation transcriptionnelle. Biologiquement, ce module reflète la co-régulation des gènes/protéines glycolytiques, typique de la reprogrammation énergétique cellulaire. Cela confirme l’importance de ce module dans ces processus métaboliques.
+
+### c.5. Analyse d'enrichissement
+
+```{r}
+tmpdir <- "~/R/temp_clusterProfiler"
+dir.create(tmpdir, showWarnings = FALSE, recursive = TRUE)
+Sys.setenv(TMPDIR = tmpdir)
+```
+
+```{r}
+# -----------------------------
+# 1. Récupérer les nœuds du module 8
+# -----------------------------
+module_membership <- membership(communities)
+modules_list <- split(names(module_membership), module_membership)
+module_8_nodes <- modules_list[["8"]]
+
+# -----------------------------
+# 2. Fonction pour extraire les gènes utilisables
+# -----------------------------
+get_genes_for_enrich <- function(nodes) {
+  # ENSEMBL
+  genes_ensembl <- nodes[grepl("^ENSG", nodes)]
+  # SYMBOL
+  genes_symbol <- nodes[grepl("^[A-Z0-9]+$", nodes)]
+  
+  # Retirer doublons et NA
+  genes <- unique(c(genes_ensembl, genes_symbol))
+  genes <- genes[!is.na(genes)]
+  return(genes)
+}
+
+# -----------------------------
+# 3. Extraire les gènes du module
+# -----------------------------
+module_8_genes <- get_genes_for_enrich(module_8_nodes)
+
+# -----------------------------
+# 4. Enrichissement GO (Biological Process)
+# -----------------------------
+if(length(module_8_genes) >= 10) {
+  
+  keytype <- if(any(grepl("^ENSG", module_8_genes))) "ENSEMBL" else "SYMBOL"
+  
+  ego_8 <- tryCatch(
+    enrichGO(
+      gene          = module_8_genes,
+      OrgDb         = org.Hs.eg.db,
+      keyType       = keytype,
+      ont           = "BP",
+      pAdjustMethod = "BH",
+      qvalueCutoff  = 0.05,
+      readable      = TRUE
+    ),
+    error = function(e) {
+      message("Erreur enrichGO pour le module 8 : ", e$message)
+      return(NULL)
+    }
+  )
+  
+  if(!is.null(ego_8)) {
+    # Afficher tous les termes enrichis (résumé)
+    print(ego_8)
+    
+    # Top 10 termes
+    cat("\n--- Top 10 termes enrichis ---\n")
+    print(head(ego_8, 10))
+    
+    # Stocker le résultat complet dans un data.frame pour export ou analyse ultérieure
+    ego_8_df <- as.data.frame(ego_8)
+    
+    # Exemple : sauvegarde en CSV
+    # write.csv(ego_8_df, "module8_GO_BP_enrichment.csv", row.names = FALSE)
+    
+  } else {
+    message("Enrichissement non réalisé pour le module 8.")
+  }
+  
+} else {
+  message("Module 8 trop petit pour enrichGO (", length(module_8_genes), " gènes).")
+}
+```
 
